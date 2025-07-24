@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Brain, Upload, Settings, Users, Database, BarChart, Sparkles, Plus, Edit, Wifi } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 import { toast } from '@/hooks/use-toast'
 import { PDFUploadImproved } from '@/components/admin/pdf-upload-enhanced'
 import { CategoryManager } from '@/components/admin/category-manager'
@@ -26,47 +27,91 @@ export default function AdminPage() {
     categoriesCount: 0
   })
 
+  // Service Role Client (カテゴリーマネージャーと同じクライアントを使用)
+  const getSupabaseClient = () => {
+    const supabaseUrl = "https://hfanhwznppxngpbjkgno.supabase.co"
+    const serviceRoleKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmYW5od3pucHB4bmdwYmprZ25vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MjMwNzQwMSwiZXhwIjoyMDY3ODgzNDAxfQ.A5xIaYlRhjWRv5jT-QdCUB8ThV2u_ufXXnV_o6dZ-a4"
+    
+    return createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false
+      },
+      db: {
+        schema: 'public'
+      },
+      global: {
+        headers: {
+          'X-Client-Info': 'admin-service-role'
+        }
+      }
+    })
+  }
+
   useEffect(() => {
     loadAdminData()
   }, [])
 
   const loadAdminData = async () => {
     try {
-      // カテゴリを取得
-      const { data: categoriesData, error: categoriesError } = await supabase
+      console.log('管理画面でカテゴリー取得開始')
+      const client = getSupabaseClient()
+      
+      // カテゴリを取得 (Service Role Clientを使用)
+      const { data: categoriesData, error: categoriesError } = await client
         .from('categories')
         .select('*')
         .order('name')
 
-      if (categoriesError) throw categoriesError
+      if (categoriesError) {
+        console.error('カテゴリー取得エラー:', categoriesError)
+        throw categoriesError
+      }
+
+      console.log('管理画面で取得されたカテゴリー:', categoriesData)
+
+      // カテゴリーデータをフォーマット
+      const formattedCategories: Category[] = categoriesData?.map(item => ({
+        id: item.id,
+        name: item.name,
+        icon: item.icon || "📚",
+        color: item.color || "bg-blue-500",
+        description: item.description || "",
+        total_questions: 0,
+        created_at: item.created_at,
+        updated_at: item.created_at
+      })) || []
+
+      setCategories(formattedCategories)
+      console.log('管理画面でカテゴリー状態更新:', formattedCategories)
 
       // 統計データを取得（存在しないテーブルはスキップ）
-      const questionsResult = await supabase.from('questions').select('id', { count: 'exact' })
+      const questionsResult = await client.from('questions').select('id', { count: 'exact' })
       
       // profilesとquiz_sessionsテーブルは存在しない可能性があるため、エラーを無視
       let usersCount = 0
       let quizzesCount = 0
       
       try {
-        const usersResult = await supabase.from('profiles').select('id', { count: 'exact' })
+        const usersResult = await client.from('profiles').select('id', { count: 'exact' })
         usersCount = usersResult.count || 0
       } catch (error) {
         console.log('profilesテーブルが存在しません')
       }
       
       try {
-        const quizzesResult = await supabase.from('quiz_sessions').select('id', { count: 'exact' })
+        const quizzesResult = await client.from('quiz_sessions').select('id', { count: 'exact' })
         quizzesCount = quizzesResult.count || 0
       } catch (error) {
         console.log('quiz_sessionsテーブルが存在しません')
       }
 
-      setCategories(categoriesData || [])
       setStats({
         totalQuestions: questionsResult.count || 0,
         totalUsers: usersCount,
         totalQuizzes: quizzesCount,
-        categoriesCount: categoriesData?.length || 0
+        categoriesCount: formattedCategories.length
       })
 
     } catch (error: any) {
@@ -105,7 +150,11 @@ export default function AdminPage() {
                 カテゴリーを選択してPDFファイルをアップロードし、自動的に問題を抽出します
               </p>
               <Button 
-                onClick={() => setShowUpload(true)}
+                onClick={() => {
+                  console.log('PDFアップロードを開く - 現在のカテゴリー:', categories)
+                  console.log('カテゴリー数:', categories.length)
+                  setShowUpload(true)
+                }}
                 className="w-full bg-green-600 hover:bg-green-700"
               >
                 <Upload className="h-4 w-4 mr-2" />
