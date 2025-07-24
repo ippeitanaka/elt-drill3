@@ -656,53 +656,109 @@ export function parseQuestionsFromTextEnhanced(text: string): ExtractedQuestion[
 
 // 問題の後に続く選択肢を抽出
 function extractChoicesAfterQuestion(text: string, questionIndex: number): string[] {
-  const searchLength = Math.min(1500, text.length - questionIndex) // 検索範囲を拡大
+  const searchLength = Math.min(1500, text.length - questionIndex)
   const afterQuestion = text.substring(questionIndex, questionIndex + searchLength)
   console.log('\n--- 選択肢検索開始 ---')
   console.log('検索対象テキスト（最初の300文字）:', afterQuestion.substring(0, 300))
   
   const choices: string[] = []
 
-  // 新しいアプローチ：実際のPDFフォーマットに基づく直接マッチング
-  console.log('\n=== 新しい直接マッチング方式を試行 ===')
+  // 🔍 強化されたデバッグ情報付き直接解析方式
+  console.log('\n=== 📝 直接テキスト解析開始 ===')
   
-  // テキストを行に分割
+  // テキストを行に分割して詳細に分析
   const lines = afterQuestion.split(/\r?\n/)
-  console.log(`検索範囲の行数: ${lines.length}`)
+  console.log(`📄 総行数: ${lines.length}`)
   
-  let foundFirstChoice = false
-  let choiceNumber = 1
+  // 最初の15行をデバッグ出力（より詳細）
+  console.log('🔍 最初の15行の詳細分析:')
+  for (let i = 0; i < Math.min(15, lines.length); i++) {
+    const line = lines[i].trim()
+    console.log(`  行${i}: "${line}" (長さ: ${line.length})`)
+    
+    // 数字で始まる行をチェック
+    if (/^[1-5]/.test(line)) {
+      console.log(`    🎯 選択肢候補: "${line}"`)
+      // 各パターンをテスト
+      if (/^[1-5]\.\s*/.test(line)) {
+        console.log(`      ✓ ドット形式にマッチ`)
+      }
+      if (/^[1-5]\s+/.test(line)) {
+        console.log(`      ✓ スペース形式にマッチ`)
+      }
+    }
+  }
   
-  for (let i = 0; i < lines.length && choices.length < 5; i++) {
+  let foundChoices = 0
+  let isInChoiceBlock = false
+  
+  for (let i = 0; i < lines.length && foundChoices < 5; i++) {
     const line = lines[i].trim()
     
     // 空行や短すぎる行をスキップ
-    if (line.length < 3) continue
+    if (line.length < 2) continue
     
-    // 数字+ドットで始まる行を探す（1. 2. 3. 4. 5.）
-    const choiceMatch = line.match(/^(\d+)\.\s*(.+)/)
+    // より柔軟な選択肢パターン検出
+    // パターン1: "1. テキスト" 形式（終端制約を削除）
+    let choiceMatch = line.match(/^([1-5])\.\s*(.+)/)
+    
+    if (!choiceMatch) {
+      // パターン2: "1 テキスト" 形式（ドットなし、終端制約を削除）
+      choiceMatch = line.match(/^([1-5])\s+(.+)/)
+    }
+    
+    if (!choiceMatch) {
+      // パターン3: 全角数字 "１. テキスト"（終端制約を削除）
+      choiceMatch = line.match(/^([１-５])[.．]\s*(.+)/)
+      if (choiceMatch) {
+        // 全角数字を半角に変換
+        const fullWidthNumbers = '１２３４５'
+        const halfWidthNumbers = '12345'
+        const idx = fullWidthNumbers.indexOf(choiceMatch[1])
+        if (idx !== -1) {
+          choiceMatch[1] = halfWidthNumbers[idx]
+        }
+      }
+    }
+    
+    if (!choiceMatch) {
+      // パターン4: 非常に寛容なパターン（数字とスペースのみ）
+      choiceMatch = line.match(/^([1-5])[\s\.\uff1a\uff0e]*(.+)/)
+    }
     
     if (choiceMatch) {
       const number = parseInt(choiceMatch[1])
       const content = choiceMatch[2].trim()
       
-      console.log(`行${i}: 数字${number}で始まる行を発見: "${content.substring(0, 50)}..."`)
+      console.log(`🎯 行${i}: 選択肢${number}を発見! "${content.substring(0, 80)}..."`)
+      console.log(`    マッチしたパターン: "${choiceMatch[0]}"`)
+      console.log(`    番号: "${choiceMatch[1]}", 内容: "${content.substring(0, 50)}"`)
       
-      // 1から始まる連続した番号の選択肢を探す
-      if (number === 1 && !foundFirstChoice) {
-        foundFirstChoice = true
-        choices.push(content)
-        choiceNumber = 2
-        console.log(`✓ 選択肢1を追加: ${content.substring(0, 40)}`)
-      } else if (foundFirstChoice && number === choiceNumber && choiceNumber <= 5) {
-        choices.push(content)
-        choiceNumber++
-        console.log(`✓ 選択肢${number}を追加: ${content.substring(0, 40)}`)
+      // 選択肢として有効かチェック
+      if (number >= 1 && number <= 5 && content.length > 2) {
+        // 重複チェック（同じ番号の選択肢が既にある場合はスキップ）
+        const existingIndex = choices.findIndex((_, idx) => idx + 1 === number)
+        if (existingIndex === -1) {
+          if (!isInChoiceBlock && number === 1) {
+            isInChoiceBlock = true
+            console.log('📋 選択肢ブロック開始')
+          }
+          
+          if (isInChoiceBlock) {
+            choices.push(content)
+            foundChoices++
+            console.log(`✅ 選択肢${number}を追加: "${content.substring(0, 50)}..."`)
+          }
+        } else {
+          console.log(`⚠️ 選択肢${number}は既に存在します`)
+        }
+      } else {
+        console.log(`❌ 無効な選択肢: 番号=${number}, 長さ=${content.length}`)
       }
     }
   }
   
-  console.log(`直接マッチング結果: ${choices.length}個の選択肢`)
+  console.log(`📊 直接解析結果: ${choices.length}個の選択肢を発見`)
   
   // 直接マッチングで十分な選択肢が見つからない場合、従来のパターンマッチングを使用
   if (choices.length < 2) {
