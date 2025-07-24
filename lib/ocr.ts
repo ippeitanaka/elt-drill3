@@ -476,16 +476,16 @@ const QUESTION_PATTERNS = [
 
 // 実際のPDFテキスト形式に基づく選択肢パターン
 const CHOICE_PATTERNS = [
-  // シンプルな数字 + ドット形式（実際のPDFで確認された形式）
-  /^(\d+)\.\s*(.+?)$/gm,
-  // 数字 + ドット + スペース（より柔軟）
-  /^\s*(\d+)\.\s+(.+?)$/gm,
-  // 従来の数字 + ドット/括弧形式（バックアップ）
-  /(?:^|\n)\s*([1-5])\s*[.．)）]\s*(.+?)(?=(?:^|\n)\s*[1-5]\s*[.．)）]|$)/gms,
+  // 行頭の数字 + ドット + テキスト（PDFで確認された実際の形式）
+  /(?:^|\n)(\d+)\.\s*(.+?)(?=(?:\n\d+\.|\n[^0-9]|\n*$))/g,
+  // より柔軟な数字 + ドット形式
+  /(?:^|\n)\s*(\d+)\.\s+(.+?)(?=(?:\n\s*\d+\.|\n\s*[^0-9]|\n*$))/g,
+  // 1-5の数字のみに限定した形式
+  /(?:^|\n)\s*([1-5])\.\s*(.+?)(?=(?:\n\s*[1-5]\.|\n\s*[^1-5]|\n*$))/g,
+  // スペースありの数字 + ドット
+  /(?:^|\n)\s+(\d+)\.\s*(.+?)(?=(?:\n\s*\d+\.|\n\s*[^0-9]|\n*$))/g,
   // アルファベット + ドット形式
-  /^([A-E])\.\s*(.+?)$/gm,
-  // 丸数字形式
-  /^([①-⑤])\s*(.+?)$/gm
+  /(?:^|\n)([A-E])\.\s*(.+?)(?=(?:\n[A-E]\.|\n[^A-E]|\n*$))/g
 ]
 
 const ANSWER_PATTERNS = [
@@ -663,66 +663,112 @@ function extractChoicesAfterQuestion(text: string, questionIndex: number): strin
   
   const choices: string[] = []
 
-  for (let i = 0; i < CHOICE_PATTERNS.length; i++) {
-    const pattern = CHOICE_PATTERNS[i]
-    console.log(`\n選択肢パターン${i + 1}を試行中:`, pattern.source)
+  // 新しいアプローチ：実際のPDFフォーマットに基づく直接マッチング
+  console.log('\n=== 新しい直接マッチング方式を試行 ===')
+  
+  // テキストを行に分割
+  const lines = afterQuestion.split(/\r?\n/)
+  console.log(`検索範囲の行数: ${lines.length}`)
+  
+  let foundFirstChoice = false
+  let choiceNumber = 1
+  
+  for (let i = 0; i < lines.length && choices.length < 5; i++) {
+    const line = lines[i].trim()
     
-    try {
-      const matches = Array.from(afterQuestion.matchAll(pattern))
-      console.log(`選択肢パターン${i + 1}のマッチ数:`, matches.length)
+    // 空行や短すぎる行をスキップ
+    if (line.length < 3) continue
+    
+    // 数字+ドットで始まる行を探す（1. 2. 3. 4. 5.）
+    const choiceMatch = line.match(/^(\d+)\.\s*(.+)/)
+    
+    if (choiceMatch) {
+      const number = parseInt(choiceMatch[1])
+      const content = choiceMatch[2].trim()
       
-      if (matches.length > 0) {
-        console.log('最初の5つのマッチ:')
-        matches.slice(0, 5).forEach((match, idx) => {
-          console.log(`  マッチ${idx + 1}:`, match[0]?.substring(0, 50))
-          console.log(`  グループ1:`, match[1]?.substring(0, 30))
-          console.log(`  グループ2:`, match[2]?.substring(0, 30))
-        })
+      console.log(`行${i}: 数字${number}で始まる行を発見: "${content.substring(0, 50)}..."`)
+      
+      // 1から始まる連続した番号の選択肢を探す
+      if (number === 1 && !foundFirstChoice) {
+        foundFirstChoice = true
+        choices.push(content)
+        choiceNumber = 2
+        console.log(`✓ 選択肢1を追加: ${content.substring(0, 40)}`)
+      } else if (foundFirstChoice && number === choiceNumber && choiceNumber <= 5) {
+        choices.push(content)
+        choiceNumber++
+        console.log(`✓ 選択肢${number}を追加: ${content.substring(0, 40)}`)
       }
+    }
+  }
+  
+  console.log(`直接マッチング結果: ${choices.length}個の選択肢`)
+  
+  // 直接マッチングで十分な選択肢が見つからない場合、従来のパターンマッチングを使用
+  if (choices.length < 2) {
+    console.log('\n=== 従来のパターンマッチングを試行 ===')
+    
+    for (let i = 0; i < CHOICE_PATTERNS.length; i++) {
+      const pattern = CHOICE_PATTERNS[i]
+      console.log(`\n選択肢パターン${i + 1}を試行中:`, pattern.source)
       
-      for (const match of matches) {
-        let choice = ''
+      try {
+        const matches = Array.from(afterQuestion.matchAll(pattern))
+        console.log(`選択肢パターン${i + 1}のマッチ数:`, matches.length)
         
-        // グループ2があれば（選択肢番号 + 内容の場合）
-        if (match[2] && match[2].trim().length > 1) {
-          choice = match[2].trim()
+        if (matches.length > 0) {
+          console.log('最初の5つのマッチ:')
+          matches.slice(0, 5).forEach((match, idx) => {
+            console.log(`  マッチ${idx + 1}:`, match[0]?.substring(0, 50))
+            console.log(`  グループ1:`, match[1]?.substring(0, 30))
+            console.log(`  グループ2:`, match[2]?.substring(0, 30))
+          })
         }
-        // グループ1のみの場合
-        else if (match[1] && match[1].trim().length > 1) {
-          choice = match[1].trim()
-        }
         
-        console.log('候補選択肢:', choice?.substring(0, 60))
-        
-        if (choice && choice.length > 1 && choice.length < 300) {
-          // 重複チェック
-          const isDuplicate = choices.some(existingChoice => 
-            existingChoice.substring(0, 30) === choice.substring(0, 30)
-          )
+        for (const match of matches) {
+          let choice = ''
           
-          if (!isDuplicate) {
-            choices.push(choice)
-            console.log(`✓ 選択肢${choices.length}を追加:`, choice.substring(0, 40))
+          // グループ2があれば（選択肢番号 + 内容の場合）
+          if (match[2] && match[2].trim().length > 1) {
+            choice = match[2].trim()
+          }
+          // グループ1のみの場合
+          else if (match[1] && match[1].trim().length > 1) {
+            choice = match[1].trim()
+          }
+          
+          console.log('候補選択肢:', choice?.substring(0, 60))
+          
+          if (choice && choice.length > 1 && choice.length < 300) {
+            // 重複チェック
+            const isDuplicate = choices.some(existingChoice => 
+              existingChoice.substring(0, 30) === choice.substring(0, 30)
+            )
             
-            if (choices.length >= 5) {
-              console.log('5つの選択肢が見つかりました')
-              break
+            if (!isDuplicate) {
+              choices.push(choice)
+              console.log(`✓ 選択肢${choices.length}を追加:`, choice.substring(0, 40))
+              
+              if (choices.length >= 5) {
+                console.log('5つの選択肢が見つかりました')
+                break
+              }
+            } else {
+              console.log('重複のため スキップ')
             }
           } else {
-            console.log('重複のため スキップ')
+            console.log('不適切な長さのためスキップ')
           }
-        } else {
-          console.log('不適切な長さのためスキップ')
         }
+        
+        if (choices.length >= 2) {
+          console.log(`パターン${i + 1}で十分な選択肢が見つかりました`)
+          break
+        }
+        
+      } catch (error) {
+        console.error(`選択肢パターン${i + 1}でエラー:`, error)
       }
-      
-      if (choices.length >= 2) {
-        console.log(`パターン${i + 1}で十分な選択肢が見つかりました`)
-        break
-      }
-      
-    } catch (error) {
-      console.error(`選択肢パターン${i + 1}でエラー:`, error)
     }
   }
 
