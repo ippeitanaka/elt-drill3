@@ -36,7 +36,7 @@ export function CategoryManager({ onCategoryChange }: CategoryManagerProps) {
     color: "bg-blue-500"
   })
   const [saving, setSaving] = useState(false)
-  const [useServiceRole, setUseServiceRole] = useState(false)
+  const [useServiceRole, setUseServiceRole] = useState(true) // デフォルトでONに変更
 
   // Service Role Client (RLSをバイパス)
   const getSupabaseClient = () => {
@@ -79,6 +79,12 @@ export function CategoryManager({ onCategoryChange }: CategoryManagerProps) {
   ]
 
   useEffect(() => {
+    // ローカルストレージからService Role Client設定を復元
+    const savedServiceRoleState = localStorage.getItem('useServiceRole')
+    if (savedServiceRoleState !== null) {
+      setUseServiceRole(JSON.parse(savedServiceRoleState))
+    }
+
     // 認証状態を確認
     const checkAuth = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -90,7 +96,7 @@ export function CategoryManager({ onCategoryChange }: CategoryManagerProps) {
     
     checkAuth()
     fetchCategories()
-  }, [])
+  }, [useServiceRole]) // useServiceRoleの変更時も再実行
 
   const fetchCategories = async () => {
     try {
@@ -142,7 +148,8 @@ export function CategoryManager({ onCategoryChange }: CategoryManagerProps) {
       if (editingCategory) {
         // 編集
         console.log('編集モード:', editingCategory.id)
-        const { error } = await supabase
+        const client = getSupabaseClient()
+        const { error } = await client
           .from('categories')
           .update({
             name: formData.name,
@@ -255,7 +262,13 @@ export function CategoryManager({ onCategoryChange }: CategoryManagerProps) {
               Service Role Client を使用
             </label>
             <button
-              onClick={() => setUseServiceRole(!useServiceRole)}
+              onClick={() => {
+                const newState = !useServiceRole
+                setUseServiceRole(newState)
+                localStorage.setItem('useServiceRole', JSON.stringify(newState))
+                // 設定変更後にカテゴリーを再取得
+                fetchCategories()
+              }}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                 useServiceRole ? 'bg-indigo-600' : 'bg-gray-200'
               }`}
