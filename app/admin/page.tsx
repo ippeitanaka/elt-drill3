@@ -79,41 +79,24 @@ export default function AdminPage() {
           <Card className="hover:shadow-lg transition-shadow">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                📄 PDF問題アップロード
+                <Upload className="h-5 w-5" />
+                PDF問題アップロード
               </CardTitle>
               <CardDescription>
-                問題PDFと解答PDFをアップロード
+                カテゴリー別に問題PDFと解答PDFをアップロード
               </CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-gray-600 mb-4">
-                PDFファイルをアップロードして自動的に問題を抽出します
+                カテゴリーを選択してPDFファイルをアップロードし、自動的に問題を抽出します
               </p>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    問題PDF
-                  </label>
-                  <input 
-                    type="file" 
-                    accept=".pdf"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    解答PDF
-                  </label>
-                  <input 
-                    type="file" 
-                    accept=".pdf"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <button className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors">
-                  アップロード・解析
-                </button>
-              </div>
+              <Button 
+                onClick={() => setShowUpload(true)}
+                className="w-full bg-green-600 hover:bg-green-700"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                PDFアップロードを開く
+              </Button>
             </CardContent>
           </Card>
 
@@ -271,6 +254,17 @@ export default function AdminPage() {
       </div>
 
       {/* モーダルコンポーネント */}
+      {showUpload && (
+        <PDFUploadImproved
+          categories={categories}
+          onClose={() => setShowUpload(false)}
+          onSuccess={() => {
+            setShowUpload(false)
+            loadAdminData()
+          }}
+        />
+      )}
+
       {showCategoryManager && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">

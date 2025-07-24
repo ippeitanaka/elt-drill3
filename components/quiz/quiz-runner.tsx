@@ -6,14 +6,18 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, Clock, CheckCircle, XCircle, RotateCcw } from "lucide-react"
+import { supabase } from "@/lib/supabase"
+import { toast } from "@/hooks/use-toast"
 
 interface Question {
   id: string
-  text: string
+  category_id: string
+  question_text: string
   choices: string[]
   correct_answer: number
-  difficulty: "easy" | "medium" | "hard"
-  category_id: string
+  explanation?: string
+  difficulty_level: number
+  points: number
 }
 
 interface QuizRunnerProps {
@@ -31,92 +35,100 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
   const [score, setScore] = useState(0)
   const [timeRemaining, setTimeRemaining] = useState(30)
   const [isCompleted, setIsCompleted] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadQuestions()
   }, [selectedCategories, selectedSets])
 
   useEffect(() => {
-    if (timeRemaining > 0 && !isAnswered && !isCompleted) {
+    if (timeRemaining > 0 && !isAnswered && !isCompleted && questions.length > 0) {
       const timer = setTimeout(() => setTimeRemaining(prev => prev - 1), 1000)
       return () => clearTimeout(timer)
     } else if (timeRemaining === 0 && !isAnswered) {
       handleTimeUp()
     }
-  }, [timeRemaining, isAnswered, isCompleted])
+  }, [timeRemaining, isAnswered, isCompleted, questions.length])
 
-  const loadQuestions = () => {
-    // モックデータ（実際はSupabaseから取得）
-    const mockQuestions: Question[] = [
-      {
-        id: "1",
-        text: "次の文で正しい文法はどれですか？",
-        choices: [
-          "I have been study English for 3 years.",
-          "I have been studying English for 3 years.",
-          "I am been studying English for 3 years.",
-          "I have studying English for 3 years."
-        ],
-        correct_answer: 1,
-        difficulty: "medium",
-        category_id: "1"
-      },
-      {
-        id: "2",
-        text: "'Ambitious' の意味として最も適切なものはどれですか？",
-        choices: [
-          "野心的な",
-          "曖昧な", 
-          "好奇心旺盛な",
-          "注意深い"
-        ],
-        correct_answer: 0,
-        difficulty: "easy",
-        category_id: "2"
-      },
-      {
-        id: "3",
-        text: "次の文の空欄に入る最も適切な前置詞はどれですか？\n\"I'm interested ___ learning new languages.\"",
-        choices: [
-          "for",
-          "in",
-          "on",
-          "at"
-        ],
-        correct_answer: 1,
-        difficulty: "easy",
-        category_id: "1"
-      },
-      {
-        id: "4",
-        text: "次の文を過去完了形に変換してください。\n\"She finished her homework before dinner.\"",
-        choices: [
-          "She had finished her homework before dinner.",
-          "She has finished her homework before dinner.",
-          "She was finishing her homework before dinner.",
-          "She will have finished her homework before dinner."
-        ],
-        correct_answer: 0,
-        difficulty: "hard",
-        category_id: "1"
-      },
-      {
-        id: "5",
-        text: "'Eloquent' の意味として最も適切なものはどれですか？",
-        choices: [
-          "雄弁な",
-          "無関心な",
-          "強情な",
-          "単純な"
-        ],
-        correct_answer: 0,
-        difficulty: "medium",
-        category_id: "2"
+  const loadQuestions = async () => {
+    try {
+      setLoading(true)
+      
+      // 選択されたカテゴリーの問題を取得
+      const { data: questionsData, error } = await supabase
+        .from('questions')
+        .select('*')
+        .in('category_id', selectedCategories)
+        .order('id')
+        .limit(20) // 最大20問
+
+      if (error) {
+        console.error('問題取得エラー:', error)
+        toast({
+          title: "エラー",
+          description: "問題の取得に失敗しました。",
+          variant: "destructive",
+        })
+        return
       }
-    ]
-    
-    setQuestions(mockQuestions)
-    setTimeRemaining(30)
+
+      if (!questionsData || questionsData.length === 0) {
+        toast({
+          title: "問題が見つかりません",
+          description: "選択されたカテゴリーに問題がありません。",
+          variant: "destructive",
+        })
+        // モックデータを代わりに使用
+        const mockQuestions: Question[] = [
+          {
+            id: "mock-1",
+            category_id: selectedCategories[0] || "1",
+            question_text: "次の文で正しい文法はどれですか？",
+            choices: [
+              "I have been study English for 3 years.",
+              "I have been studying English for 3 years.",
+              "I am been studying English for 3 years.",
+              "I have studying English for 3 years."
+            ],
+            correct_answer: 1,
+            explanation: "現在完了進行形の正しい形は 'have been studying' です。",
+            difficulty_level: 2,
+            points: 20
+          },
+          {
+            id: "mock-2", 
+            category_id: selectedCategories[0] || "1",
+            question_text: "'Ambitious' の意味として最も適切なものはどれですか？",
+            choices: [
+              "野心的な",
+              "曖昧な", 
+              "好奇心旺盛な",
+              "注意深い"
+            ],
+            correct_answer: 0,
+            explanation: "Ambitious は「野心的な、向上心のある」という意味です。",
+            difficulty_level: 1,
+            points: 10
+          }
+        ]
+        setQuestions(mockQuestions)
+        setLoading(false)
+        return
+      }
+
+      // データをシャッフル
+      const shuffledQuestions = questionsData.sort(() => 0.5 - Math.random())
+      setQuestions(shuffledQuestions)
+      setLoading(false)
+    } catch (error) {
+      console.error('問題読み込みエラー:', error)
+      toast({
+        title: "エラー",
+        description: "問題の読み込み中にエラーが発生しました。",
+        variant: "destructive",
+      })
+      setLoading(false)
+    }
   }
 
   const handleAnswerSelect = (answerIndex: number) => {
@@ -156,13 +168,35 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
     loadQuestions()
   }
 
-  if (questions.length === 0) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50 p-4 flex items-center justify-center">
         <Card className="w-full max-w-md">
           <CardContent className="p-8 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
             <p className="text-gray-600">問題を読み込み中...</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (questions.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50 p-4 flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardContent className="p-8 text-center">
+            <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              問題が見つかりません
+            </h3>
+            <p className="text-gray-600 mb-4">
+              選択されたカテゴリーに問題がありません。
+            </p>
+            <Button onClick={onBack} variant="outline">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              戻る
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -201,24 +235,24 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
                   <Button 
                     onClick={handleRestartQuiz}
                     variant="outline"
-                    className="flex items-center"
+                    className="flex items-center space-x-2"
                   >
-                    <RotateCcw className="w-4 h-4 mr-2" />
-                    もう一度挑戦
+                    <RotateCcw className="h-4 w-4" />
+                    <span>もう一度挑戦</span>
                   </Button>
                   <Button 
                     onClick={onBack}
                     variant="outline"
-                    className="flex items-center"
+                    className="flex items-center space-x-2"
                   >
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    カテゴリー選択に戻る
+                    <ArrowLeft className="h-4 w-4" />
+                    <span>カテゴリー選択に戻る</span>
                   </Button>
                   <Button 
                     onClick={onComplete}
                     className="bg-gradient-to-r from-indigo-500 to-purple-600"
                   >
-                    結果を確認
+                    結果をランキングに記録
                   </Button>
                 </div>
               </div>
@@ -234,109 +268,114 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50 p-4">
-      <div className="max-w-4xl mx-auto pt-8">
+      <div className="max-w-3xl mx-auto pt-8">
         {/* ヘッダー */}
         <div className="flex items-center justify-between mb-6">
           <Button 
-            onClick={onBack} 
-            variant="ghost" 
-            className="flex items-center text-gray-600 hover:text-indigo-600"
+            onClick={onBack}
+            variant="ghost"
+            className="flex items-center space-x-2"
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            戻る
+            <ArrowLeft className="h-4 w-4" />
+            <span>戻る</span>
           </Button>
+          
           <div className="flex items-center space-x-4">
-            <Badge variant="outline" className="text-lg px-3 py-1">
-              {currentQuestionIndex + 1} / {questions.length}
+            <Badge variant="outline" className="flex items-center space-x-1">
+              <span>{currentQuestionIndex + 1} / {questions.length}</span>
             </Badge>
-            <div className="flex items-center text-lg font-medium">
-              <Clock className="w-5 h-5 mr-2 text-orange-500" />
-              <span className={timeRemaining <= 10 ? "text-red-500" : "text-gray-700"}>
-                {timeRemaining}秒
-              </span>
-            </div>
+            <Badge 
+              variant={timeRemaining <= 10 ? "destructive" : "secondary"}
+              className="flex items-center space-x-1"
+            >
+              <Clock className="h-3 w-3" />
+              <span>{timeRemaining}秒</span>
+            </Badge>
           </div>
         </div>
 
-        {/* 進捗バー */}
-        <div className="mb-8">
-          <Progress value={progress} className="h-3" />
+        {/* プログレスバー */}
+        <div className="mb-6">
+          <Progress value={progress} className="h-2" />
           <p className="text-sm text-gray-600 mt-2 text-center">
-            進捗: {Math.round(progress)}%
+            進捗: {Math.round(progress)}% 完了
           </p>
         </div>
 
         {/* 問題カード */}
-        <Card className="border-0 shadow-lg">
-          <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
+        <Card className="border-0 shadow-xl">
+          <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-xl">問題 {currentQuestionIndex + 1}</CardTitle>
-              <Badge 
-                variant="secondary" 
-                className={`${
-                  currentQuestion.difficulty === 'easy' ? 'bg-green-100 text-green-700' :
-                  currentQuestion.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                  'bg-red-100 text-red-700'
-                }`}
-              >
-                {currentQuestion.difficulty === 'easy' ? '基礎' :
-                 currentQuestion.difficulty === 'medium' ? '標準' : '応用'}
+              <Badge variant="secondary">
+                難易度: {currentQuestion.difficulty_level}/5
+              </Badge>
+              <Badge variant="outline">
+                {currentQuestion.points}pt
               </Badge>
             </div>
           </CardHeader>
-          <CardContent className="p-8">
-            <div className="mb-8">
-              <p className="text-lg leading-relaxed whitespace-pre-line">
-                {currentQuestion.text}
-              </p>
-            </div>
+          <CardContent className="p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-6 leading-relaxed">
+              {currentQuestion.question_text}
+            </h2>
             
             <div className="space-y-3">
               {currentQuestion.choices.map((choice, index) => {
-                let buttonClass = "w-full p-4 text-left border-2 rounded-lg transition-all duration-200 ";
+                let buttonVariant: "default" | "outline" | "secondary" | "destructive" | "ghost" | "link" = "outline"
+                let buttonClassName = "w-full justify-start text-left h-auto p-4 border-2 transition-all"
                 
                 if (isAnswered) {
                   if (index === currentQuestion.correct_answer) {
-                    buttonClass += "bg-green-50 border-green-500 text-green-700";
-                  } else if (index === selectedAnswer && selectedAnswer !== currentQuestion.correct_answer) {
-                    buttonClass += "bg-red-50 border-red-500 text-red-700";
+                    buttonVariant = "default"
+                    buttonClassName += " bg-green-100 border-green-500 text-green-800"
+                  } else if (index === selectedAnswer) {
+                    buttonVariant = "destructive"
+                    buttonClassName += " bg-red-100 border-red-500 text-red-800"
                   } else {
-                    buttonClass += "bg-gray-50 border-gray-300 text-gray-600";
+                    buttonClassName += " opacity-50"
                   }
                 } else {
-                  buttonClass += "border-gray-300 hover:border-indigo-400 hover:bg-indigo-50 active:scale-[0.98]";
+                  buttonClassName += " hover:border-indigo-400 hover:bg-indigo-50"
                 }
 
                 return (
-                  <button
+                  <Button
                     key={index}
+                    variant={buttonVariant}
+                    className={buttonClassName}
                     onClick={() => handleAnswerSelect(index)}
                     disabled={isAnswered}
-                    className={buttonClass}
                   >
-                    <div className="flex items-center">
-                      <span className="font-medium mr-3 text-gray-500">
-                        {String.fromCharCode(65 + index)}.
+                    <div className="flex items-center space-x-3 w-full">
+                      <span className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium">
+                        {String.fromCharCode(65 + index)}
                       </span>
                       <span className="flex-1">{choice}</span>
                       {isAnswered && index === currentQuestion.correct_answer && (
-                        <CheckCircle className="w-5 h-5 text-green-600" />
+                        <CheckCircle className="h-5 w-5 text-green-600" />
                       )}
-                      {isAnswered && index === selectedAnswer && selectedAnswer !== currentQuestion.correct_answer && (
-                        <XCircle className="w-5 h-5 text-red-600" />
+                      {isAnswered && index === selectedAnswer && index !== currentQuestion.correct_answer && (
+                        <XCircle className="h-5 w-5 text-red-600" />
                       )}
                     </div>
-                  </button>
+                  </Button>
                 )
               })}
             </div>
 
+            {isAnswered && currentQuestion.explanation && (
+              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h4 className="font-medium text-blue-900 mb-2">解説</h4>
+                <p className="text-blue-800">{currentQuestion.explanation}</p>
+              </div>
+            )}
+
             {isAnswered && (
-              <div className="mt-8 text-center">
+              <div className="mt-6 flex justify-center">
                 <Button 
                   onClick={handleNextQuestion}
+                  className="bg-gradient-to-r from-indigo-500 to-purple-600"
                   size="lg"
-                  className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700"
                 >
                   {currentQuestionIndex < questions.length - 1 ? "次の問題へ" : "結果を見る"}
                 </Button>
@@ -344,6 +383,13 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
             )}
           </CardContent>
         </Card>
+
+        {/* スコア表示 */}
+        <div className="mt-6 text-center">
+          <p className="text-gray-600">
+            現在のスコア: <span className="font-bold text-indigo-600">{score} / {currentQuestionIndex + (isAnswered ? 1 : 0)}</span>
+          </p>
+        </div>
       </div>
     </div>
   )
