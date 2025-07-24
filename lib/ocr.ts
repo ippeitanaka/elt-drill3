@@ -460,23 +460,32 @@ function debugAnswerParsing(text: string): string {
 
 // === 拡張されたOCR機能 ===
 
-// 日本語・英語対応の正規表現パターン
+// シンプルで確実な問題パターン
 const QUESTION_PATTERNS = [
-  /(?:問題?|Question|Q)[\s\d]+[．.\)）]\s*(.+?)(?=(?:問題?|Question|Q)[\s\d]+[．.\)）]|\s*[1-5ア-オa-e]\s*[\.．\)）]|$)/gms,
-  /(\d+)[．.\)）]\s*(.+?)(?=\d+[．.\)）]|\s*[1-5ア-オa-e]\s*[\.．\)）]|$)/gms,
-  /(?:^|\n)\s*(.+?\?)\s*(?=\n\s*[1-5ア-オa-e]|\n\s*[1-5]\s*[\.．\)）]|$)/gm,
-  /(?:次の|以下の|下記の)(.+?)(?:選択|選ん|答え)/g,
-  /(.+?)(?:について|に関して|で)(?:正しい|適切な|最も|もっとも)(?:もの|答え|選択肢)(?:を|は)/g
+  // 数字 + ドット/括弧のパターン（最もシンプル）
+  /(?:^|\n)\s*(\d+)\s*[.．)）]\s*(.+?)(?=(?:^|\n)\s*\d+\s*[.．)）]|$)/gms,
+  // 問 + 数字のパターン  
+  /(?:^|\n)\s*問\s*(\d+)\s*[.．)）]?\s*(.+?)(?=(?:^|\n)\s*問\s*\d+|$)/gms,
+  // Q + 数字のパターン
+  /(?:^|\n)\s*Q\s*(\d+)\s*[.．)）]?\s*(.+?)(?=(?:^|\n)\s*Q\s*\d+|$)/gms,
+  // 任意の文章（疑問符や選択肢の前まで）
+  /(.{20,200}[？?])\s*(?=\s*[1-5ア-オa-eA-E]\s*[.．)）])/gm,
+  // 選択肢番号が現れる直前までの文章
+  /(.{10,300})\s*(?=\s*[1-5]\s*[.．)）])/gm
 ]
 
+// シンプルで確実な選択肢パターン
 const CHOICE_PATTERNS = [
-  /^[1-5ア-オa-e]\s*[\.．\)）]\s*(.+?)$/gm,
-  /^[①-⑤]\s*(.+?)$/gm,
-  /^[A-E]\s*[\.．\)）]\s*(.+?)$/gm,
-  /^\([1-5ア-オa-e]\)\s*(.+?)$/gm,
-  /^[1-5]\s*:\s*(.+?)$/gm,
-  /^[・•]\s*(.+?)$/gm,
-  /^\d+\)\s*(.+?)$/gm
+  // 数字 + ドット/括弧の選択肢
+  /(?:^|\n)\s*([1-5])\s*[.．)）]\s*(.+?)(?=(?:^|\n)\s*[1-5]\s*[.．)）]|$)/gms,
+  // アルファベット + ドット/括弧
+  /(?:^|\n)\s*([A-E])\s*[.．)）]\s*(.+?)(?=(?:^|\n)\s*[A-E]\s*[.．)）]|$)/gms,
+  // ひらがな選択肢
+  /(?:^|\n)\s*([ア-オ])\s*[.．)）]?\s*(.+?)(?=(?:^|\n)\s*[ア-オ]|$)/gms,
+  // 丸数字
+  /(?:^|\n)\s*([①-⑤])\s*(.+?)(?=(?:^|\n)\s*[①-⑤]|$)/gms,
+  // 括弧付き数字
+  /(?:^|\n)\s*\(([1-5])\)\s*(.+?)(?=(?:^|\n)\s*\([1-5]\)|$)/gms
 ]
 
 const ANSWER_PATTERNS = [
@@ -555,52 +564,89 @@ function convertChoiceToNumber(choice: string): number {
 // テキストから問題を抽出（拡張版）
 export function parseQuestionsFromTextEnhanced(text: string): ExtractedQuestion[] {
   console.log('=== 問題抽出開始 ===')
-  console.log('OCRテキスト（最初の500文字）:', text.substring(0, 500))
   console.log('OCRテキスト全長:', text.length)
+  console.log('OCRテキスト（最初の1000文字）:')
+  console.log(text.substring(0, 1000))
   
   const questions: ExtractedQuestion[] = []
   
   // テキストをクリーンアップ
   const cleanText = text
-    .replace(/\s+/g, ' ') // 複数の空白を1つに
-    .replace(/\n+/g, '\n') // 複数の改行を1つに
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\s+/g, ' ')
+    .replace(/\n+/g, '\n')
     .trim()
 
-  console.log('クリーンアップ後のテキスト（最初の500文字）:', cleanText.substring(0, 500))
+  console.log('クリーンアップ後のテキスト（最初の800文字）:')
+  console.log(cleanText.substring(0, 800))
 
-  // 複数のパターンで問題を検索
+  // 各パターンで問題を検索
   for (let i = 0; i < QUESTION_PATTERNS.length; i++) {
     const pattern = QUESTION_PATTERNS[i]
-    console.log(`パターン${i + 1}を試行中:`, pattern.source)
+    console.log(`\n--- パターン${i + 1}を試行中 ---`)
+    console.log('パターン:', pattern.source)
     
-    const matches = Array.from(cleanText.matchAll(new RegExp(pattern.source, pattern.flags)))
-    console.log(`パターン${i + 1}のマッチ数:`, matches.length)
-    
-    for (const match of matches) {
-      const questionText = match[1] || match[2] || match[0]
-      console.log('マッチしたテキスト:', questionText?.substring(0, 100))
+    try {
+      const matches = Array.from(cleanText.matchAll(pattern))
+      console.log(`パターン${i + 1}のマッチ数:`, matches.length)
       
-      if (!questionText || questionText.length < 10) {
-        console.log('テキストが短すぎるため スキップ')
-        continue
-      }
-
-      // この問題の選択肢を検索
-      const choices = extractChoicesAfterQuestion(cleanText, match.index || 0)
-      console.log('抽出された選択肢:', choices)
-      
-      if (choices.length >= 2) {
-        questions.push({
-          questionText: questionText.trim(),
-          choices: choices,
-          difficulty: estimateDifficulty(questionText)
+      if (matches.length > 0) {
+        console.log('最初の3つのマッチ:')
+        matches.slice(0, 3).forEach((match, idx) => {
+          console.log(`  マッチ${idx + 1}:`, match[0]?.substring(0, 100))
+          console.log(`  グループ1:`, match[1]?.substring(0, 50))
+          console.log(`  グループ2:`, match[2]?.substring(0, 50))
         })
-        
-        console.log(`問題発見: ${questionText.substring(0, 50)}...`)
-        console.log(`選択肢: ${choices.join(', ')}`)
-      } else {
-        console.log('選択肢が不足しているためスキップ')
       }
+      
+      for (let j = 0; j < Math.min(matches.length, 10); j++) { // 最初の10個まで処理
+        const match = matches[j]
+        let questionText = ''
+        
+        // マッチしたグループから問題文を取得
+        if (match[2] && match[2].trim().length > 10) {
+          questionText = match[2].trim()
+        } else if (match[1] && match[1].trim().length > 10) {
+          questionText = match[1].trim()
+        } else if (match[0] && match[0].trim().length > 10) {
+          questionText = match[0].trim()
+        }
+        
+        console.log(`問題候補${j + 1}:`, questionText.substring(0, 100))
+        
+        if (!questionText || questionText.length < 10) {
+          console.log('テキストが短すぎるためスキップ')
+          continue
+        }
+
+        // この問題の選択肢を検索
+        const startIndex = match.index || 0
+        const choices = extractChoicesAfterQuestion(cleanText, startIndex)
+        console.log('抽出された選択肢数:', choices.length)
+        
+        if (choices.length >= 2) {
+          questions.push({
+            questionText: questionText,
+            choices: choices,
+            difficulty: estimateDifficulty(questionText)
+          })
+          
+          console.log(`✓ 問題${questions.length}を追加:`, questionText.substring(0, 80))
+          console.log(`  選択肢: [${choices.map(c => c.substring(0, 20)).join(', ')}]`)
+        } else {
+          console.log('選択肢が不足しているためスキップ')
+        }
+      }
+      
+      // 十分な問題が見つかった場合は他のパターンを試さない
+      if (questions.length >= 5) {
+        console.log(`十分な問題が見つかりました: ${questions.length}問`)
+        break
+      }
+      
+    } catch (error) {
+      console.error(`パターン${i + 1}でエラー:`, error)
     }
   }
 
@@ -610,36 +656,78 @@ export function parseQuestionsFromTextEnhanced(text: string): ExtractedQuestion[
 
 // 問題の後に続く選択肢を抽出
 function extractChoicesAfterQuestion(text: string, questionIndex: number): string[] {
-  const afterQuestion = text.substring(questionIndex, questionIndex + 1000) // 最初の1000文字のみチェック
-  console.log('選択肢検索対象テキスト:', afterQuestion.substring(0, 200))
+  const searchLength = Math.min(1500, text.length - questionIndex) // 検索範囲を拡大
+  const afterQuestion = text.substring(questionIndex, questionIndex + searchLength)
+  console.log('\n--- 選択肢検索開始 ---')
+  console.log('検索対象テキスト（最初の300文字）:', afterQuestion.substring(0, 300))
   
   const choices: string[] = []
 
   for (let i = 0; i < CHOICE_PATTERNS.length; i++) {
     const pattern = CHOICE_PATTERNS[i]
-    console.log(`選択肢パターン${i + 1}を試行中:`, pattern.source)
+    console.log(`\n選択肢パターン${i + 1}を試行中:`, pattern.source)
     
-    const matches = Array.from(afterQuestion.matchAll(new RegExp(pattern.source, pattern.flags)))
-    console.log(`選択肢パターン${i + 1}のマッチ数:`, matches.length)
-    
-    for (const match of matches) {
-      const choice = match[1]?.trim()
-      console.log('マッチした選択肢:', choice?.substring(0, 50))
+    try {
+      const matches = Array.from(afterQuestion.matchAll(pattern))
+      console.log(`選択肢パターン${i + 1}のマッチ数:`, matches.length)
       
-      if (choice && choice.length > 1 && choice.length < 200) {
-        choices.push(choice)
-        console.log(`選択肢追加: ${choice.substring(0, 30)}`)
-        if (choices.length >= 5) break
+      if (matches.length > 0) {
+        console.log('最初の5つのマッチ:')
+        matches.slice(0, 5).forEach((match, idx) => {
+          console.log(`  マッチ${idx + 1}:`, match[0]?.substring(0, 50))
+          console.log(`  グループ1:`, match[1]?.substring(0, 30))
+          console.log(`  グループ2:`, match[2]?.substring(0, 30))
+        })
       }
-    }
-    
-    if (choices.length >= 2) {
-      console.log(`十分な選択肢が見つかりました: ${choices.length}個`)
-      break
+      
+      for (const match of matches) {
+        let choice = ''
+        
+        // グループ2があれば（選択肢番号 + 内容の場合）
+        if (match[2] && match[2].trim().length > 1) {
+          choice = match[2].trim()
+        }
+        // グループ1のみの場合
+        else if (match[1] && match[1].trim().length > 1) {
+          choice = match[1].trim()
+        }
+        
+        console.log('候補選択肢:', choice?.substring(0, 60))
+        
+        if (choice && choice.length > 1 && choice.length < 300) {
+          // 重複チェック
+          const isDuplicate = choices.some(existingChoice => 
+            existingChoice.substring(0, 30) === choice.substring(0, 30)
+          )
+          
+          if (!isDuplicate) {
+            choices.push(choice)
+            console.log(`✓ 選択肢${choices.length}を追加:`, choice.substring(0, 40))
+            
+            if (choices.length >= 5) {
+              console.log('5つの選択肢が見つかりました')
+              break
+            }
+          } else {
+            console.log('重複のため スキップ')
+          }
+        } else {
+          console.log('不適切な長さのためスキップ')
+        }
+      }
+      
+      if (choices.length >= 2) {
+        console.log(`パターン${i + 1}で十分な選択肢が見つかりました`)
+        break
+      }
+      
+    } catch (error) {
+      console.error(`選択肢パターン${i + 1}でエラー:`, error)
     }
   }
 
-  console.log(`最終選択肢リスト: ${choices.join(' | ')}`)
+  console.log(`選択肢抽出完了: ${choices.length}個`)
+  console.log('最終選択肢リスト:', choices.map(c => c.substring(0, 30)).join(' | '))
   return choices.slice(0, 5) // 最大5選択肢
 }
 
