@@ -48,7 +48,16 @@ export function CategoryManager({ onCategoryChange }: CategoryManagerProps) {
       return createClient(supabaseUrl, serviceRoleKey, {
         auth: {
           autoRefreshToken: false,
-          persistSession: false
+          persistSession: false,
+          detectSessionInUrl: false
+        },
+        db: {
+          schema: 'public'
+        },
+        global: {
+          headers: {
+            'X-Client-Info': 'admin-service-role'
+          }
         }
       })
     } else {
