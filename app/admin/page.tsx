@@ -40,18 +40,32 @@ export default function AdminPage() {
 
       if (categoriesError) throw categoriesError
 
-      // 統計データを取得
-      const [questionsResult, usersResult, quizzesResult] = await Promise.all([
-        supabase.from('questions').select('id', { count: 'exact' }),
-        supabase.from('profiles').select('id', { count: 'exact' }),
-        supabase.from('quiz_sessions').select('id', { count: 'exact' })
-      ])
+      // 統計データを取得（存在しないテーブルはスキップ）
+      const questionsResult = await supabase.from('questions').select('id', { count: 'exact' })
+      
+      // profilesとquiz_sessionsテーブルは存在しない可能性があるため、エラーを無視
+      let usersCount = 0
+      let quizzesCount = 0
+      
+      try {
+        const usersResult = await supabase.from('profiles').select('id', { count: 'exact' })
+        usersCount = usersResult.count || 0
+      } catch (error) {
+        console.log('profilesテーブルが存在しません')
+      }
+      
+      try {
+        const quizzesResult = await supabase.from('quiz_sessions').select('id', { count: 'exact' })
+        quizzesCount = quizzesResult.count || 0
+      } catch (error) {
+        console.log('quiz_sessionsテーブルが存在しません')
+      }
 
       setCategories(categoriesData || [])
       setStats({
         totalQuestions: questionsResult.count || 0,
-        totalUsers: usersResult.count || 0,
-        totalQuizzes: quizzesResult.count || 0,
+        totalUsers: usersCount,
+        totalQuizzes: quizzesCount,
         categoriesCount: categoriesData?.length || 0
       })
 

@@ -31,11 +31,24 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
   const [extractedData, setExtractedData] = useState<ParsedQuizData | null>(null)
   const [manualEdit, setManualEdit] = useState("")
 
+  // デバッグ用のログ
+  console.log('PDFUploadImproved - categories:', categories)
+  console.log('PDFUploadImproved - selectedCategory:', selectedCategory)
+
   const handleUpload = async () => {
-    if (!selectedCategory || !questionFile) {
+    if (!selectedCategory) {
       toast({
-        title: "必要な情報が不足しています",
-        description: "カテゴリと問題ファイルを選択してください。",
+        title: "カテゴリーが選択されていません",
+        description: "問題を分類するカテゴリーを選択してください。",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    if (!questionFile) {
+      toast({
+        title: "問題ファイルが選択されていません",
+        description: "問題PDFファイルを選択してください。",
         variant: "destructive",
       })
       return
@@ -48,6 +61,7 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
       // 新しいOCR機能を使用してPDFを処理
       setProgress(20)
       console.log('🧠 拡張OCRでPDF処理を開始...')
+      console.log('選択されたカテゴリー:', selectedCategory)
       
       const parsedData: ParsedQuizData = await processQuizPDFs(questionFile, answerFile || undefined)
       
@@ -217,21 +231,39 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
               <div className="grid gap-4">
                 <div>
                   <Label htmlFor="category">カテゴリ選択</Label>
-                  <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="カテゴリを選択してください" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
-                          <span className="flex items-center gap-2">
-                            <span>{category.icon}</span>
-                            <span>{category.name}</span>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-2">
+                    {categories && categories.length > 0 ? (
+                      <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="カテゴリを選択してください" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map((category) => (
+                            <SelectItem key={category.id} value={category.id}>
+                              <div className="flex items-center gap-2">
+                                <span>{category.icon}</span>
+                                <span>{category.name}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="p-3 border border-orange-300 bg-orange-50 rounded-md">
+                        <p className="text-sm text-orange-800">
+                          カテゴリーがまだ作成されていません。
+                        </p>
+                        <p className="text-xs text-orange-600 mt-1">
+                          まずカテゴリー管理でカテゴリーを作成してください。
+                        </p>
+                      </div>
+                    )}
+                    {selectedCategory && (
+                      <p className="text-sm text-green-600">
+                        選択中: {categories?.find(c => c.id === selectedCategory)?.name}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -304,7 +336,7 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
 
                 <Button
                   onClick={handleUpload}
-                  disabled={!selectedCategory || !questionFile || isProcessing}
+                  disabled={!selectedCategory || !questionFile || isProcessing || !categories || categories.length === 0}
                   className="w-full"
                   size="lg"
                 >
@@ -313,10 +345,25 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
                       <Zap className="mr-2 h-4 w-4 animate-spin" />
                       AI処理中...
                     </>
+                  ) : !categories || categories.length === 0 ? (
+                    <>
+                      <AlertCircle className="mr-2 h-4 w-4" />
+                      カテゴリーが必要です
+                    </>
+                  ) : !selectedCategory ? (
+                    <>
+                      <AlertCircle className="mr-2 h-4 w-4" />
+                      カテゴリーを選択してください
+                    </>
+                  ) : !questionFile ? (
+                    <>
+                      <AlertCircle className="mr-2 h-4 w-4" />
+                      問題PDFを選択してください
+                    </>
                   ) : (
                     <>
                       <Brain className="mr-2 h-4 w-4" />
-                      AI処理開始
+                      AI処理でアップロード開始
                     </>
                   )}
                 </Button>
