@@ -6,7 +6,16 @@ const supabaseAnonKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmYW5od3pucHB4bmdwYmprZ25vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIzMDc0MDEsImV4cCI6MjA2Nzg4MzQwMX0.38vPdxOHreyEXV41mRUDBZO15Y6R0umyUI1s26W1eDE"
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  db: {
+    schema: 'public'
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10
+    }
+  }
+})
 
 // Server-side client for admin operations
 export const createServerClient = () => {

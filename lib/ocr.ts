@@ -621,8 +621,30 @@ export function parseQuestionsFromTextEnhanced(text: string): ExtractedQuestion[
         }
 
         // この問題の選択肢を検索
+        console.log('🔍 match.index の値:', match.index);
+        console.log('🔍 match オブジェクト:', match);
         const startIndex = match.index || 0
+        console.log('📍 startIndex 計算完了:', startIndex);
+        console.log('🚀 extractChoicesAfterQuestion関数を呼び出します - startIndex:', startIndex);
+        
+        // デバッグ: 関数の存在確認
+        console.log('🔍 関数の型:', typeof extractChoicesAfterQuestion);
+        if (typeof extractChoicesAfterQuestion !== 'function') {
+          console.error('💥 CRITICAL: extractChoicesAfterQuestion is not a function!');
+          console.log('Available in scope:', Object.getOwnPropertyNames(globalThis).filter(n => n.includes('extract')));
+        }
+        
+        console.log('📞 関数呼び出し直前 - パラメータ:', {
+          cleanTextLength: cleanText.length,
+          startIndex: startIndex,
+          textAtStart: cleanText.substring(startIndex, startIndex + 100)
+        });
         const choices = extractChoicesAfterQuestion(cleanText, startIndex)
+        console.log('✅ 関数呼び出し完了 - 結果:', choices);
+        console.log('📊 関数実行後のデバッグ情報:', {
+          choicesCount: choices.length,
+          choicesPreview: choices.slice(0, 3)
+        });
         console.log('抽出された選択肢数:', choices.length)
         
         if (choices.length >= 2) {
@@ -663,8 +685,64 @@ function extractChoicesAfterQuestion(text: string, questionIndex: number): strin
   
   const choices: string[] = []
 
-  // 🔍 強化されたデバッグ情報付き直接解析方式
-  console.log('\n=== 📝 直接テキスト解析開始 ===')
+  // ✨ PDFテキスト専用：同一行内の選択肢抽出（改行なし対応）
+  console.log('\n=== � 同一行選択肢抽出開始 ===')
+  
+  // 選択肢パターン: "1. テキスト 2. テキスト 3. テキスト..." 形式
+  const inlinePatterns = [
+    // パターン1: "1. テキスト 2. テキスト" 形式（改良版）- スペースを必須に
+    /(\d+)\.\s*([^0-9]+?)(?=\s+\d+\.\s*|$)/g,
+    // パターン2: より厳密なパターン - 改行を除外
+    /(\d+)\.\s*([^0-9\n]+?)(?=\s*\d+\.\s*|$)/g,
+    // パターン3: さらに寛容なパターン
+    /(\d+)\.\s*(.+?)(?=\s+\d+\.|$)/g,
+    // パターン4: 元のパターン（バックアップ）
+    /(\d+)\.\s*([^0-9]+?)(?=\s*\d+\.\s*|$)/g
+  ]
+  
+  for (let patternIndex = 0; patternIndex < inlinePatterns.length; patternIndex++) {
+    const pattern = inlinePatterns[patternIndex]
+    console.log(`\n📋 インラインパターン${patternIndex + 1}をテスト:`, pattern.source)
+    
+    const inlineMatches = Array.from(afterQuestion.matchAll(pattern))
+    console.log(`マッチ数: ${inlineMatches.length}`)
+    
+    if (inlineMatches.length >= 2) {
+      console.log(`🎯 パターン${patternIndex + 1}で${inlineMatches.length}個の選択肢を発見`)
+      
+      // 一時的な選択肢配列
+      const tempChoices: string[] = []
+      
+      for (const match of inlineMatches) {
+        const choiceNumber = parseInt(match[1])
+        const choiceText = match[2].trim()
+        
+        console.log(`🔍 候補選択肢${choiceNumber}: "${choiceText.substring(0, 80)}..."`)
+        
+        if (choiceNumber >= 1 && choiceNumber <= 5 && choiceText.length > 1 && choiceText.length < 500) {
+          tempChoices.push(choiceText)
+          console.log(`✅ 選択肢${choiceNumber}を追加: "${choiceText.substring(0, 50)}..."`)
+        } else {
+          console.log(`❌ 無効な選択肢: 番号=${choiceNumber}, 長さ=${choiceText.length}`)
+        }
+      }
+      
+      if (tempChoices.length >= 2) {
+        choices.push(...tempChoices)
+        console.log(`📊 パターン${patternIndex + 1}で選択肢抽出完了: ${choices.length}個`)
+        return choices.slice(0, 5)
+      }
+    } else {
+      console.log(`⚠️ パターン${patternIndex + 1}では十分な選択肢が見つかりませんでした`)
+    }
+  }
+  
+  const inlineMatches = Array.from(afterQuestion.matchAll(inlinePatterns[0]))
+  
+  // もし上記のパターンで選択肢が見つからない場合は従来の行ベース解析へ
+
+  // �🔍 従来の行ベース解析（バックアップ）
+  console.log('\n=== 📝 行ベース解析開始 ===')
   
   // テキストを行に分割して詳細に分析
   const lines = afterQuestion.split(/\r?\n/)

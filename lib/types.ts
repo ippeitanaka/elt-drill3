@@ -97,35 +97,47 @@ export interface Database {
       questions: {
         Row: {
           id: string
-          category_id: string
+          question_set_id: string
           question_text: string
-          choices: string[]
-          correct_answer: number
+          option_a: string
+          option_b: string
+          option_c: string
+          option_d: string
+          option_e?: string | null
+          correct_answer: string
+          difficulty: string | null
           explanation: string | null
-          difficulty_level: number
-          points: number
+          order_index: number
           created_at: string
         }
         Insert: {
           id?: string
-          category_id: string
+          question_set_id: string
           question_text: string
-          choices: string[]
-          correct_answer: number
+          option_a: string
+          option_b: string
+          option_c: string
+          option_d: string
+          option_e?: string | null
+          correct_answer: string
+          difficulty?: string | null
           explanation?: string | null
-          difficulty_level?: number
-          points?: number
+          order_index?: number
           created_at?: string
         }
         Update: {
           id?: string
-          category_id?: string
+          question_set_id?: string
           question_text?: string
-          choices?: string[]
-          correct_answer?: number
+          option_a?: string
+          option_b?: string
+          option_c?: string
+          option_d?: string
+          option_e?: string | null
+          correct_answer?: string
+          difficulty?: string | null
           explanation?: string | null
-          difficulty_level?: number
-          points?: number
+          order_index?: number
           created_at?: string
         }
       }
@@ -133,7 +145,7 @@ export interface Database {
         Row: {
           id: string
           user_id: string
-          category_id: string
+          question_set_id: string
           total_questions: number
           correct_answers: number
           score: number
@@ -144,7 +156,7 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
-          category_id: string
+          question_set_id: string
           total_questions: number
           correct_answers: number
           score: number
@@ -155,13 +167,45 @@ export interface Database {
         Update: {
           id?: string
           user_id?: string
-          category_id?: string
+          question_set_id?: string
           total_questions?: number
           correct_answers?: number
           score?: number
           time_taken?: number
           completed_at?: string
           created_at?: string
+        }
+      }
+      question_sets: {
+        Row: {
+          id: string
+          category_id: string
+          title: string
+          description: string | null
+          order_index: number
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          category_id: string
+          title: string
+          description?: string | null
+          order_index?: number
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          category_id?: string
+          title?: string
+          description?: string | null
+          order_index?: number
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
         }
       }
       achievements: {
@@ -223,6 +267,7 @@ export interface Database {
 export type Profile = Database['public']['Tables']['profiles']['Row']
 export type CategoryDB = Database['public']['Tables']['categories']['Row']
 export type Question = Database['public']['Tables']['questions']['Row']
+export type QuestionSetDB = Database['public']['Tables']['question_sets']['Row']
 export type QuizSession = Database['public']['Tables']['quiz_sessions']['Row']
 export type Achievement = Database['public']['Tables']['achievements']['Row']
 export type UserAchievement = Database['public']['Tables']['user_achievements']['Row']

@@ -8,7 +8,7 @@ import { Brain, Upload, Settings, Users, Database, BarChart, Sparkles, Plus, Edi
 import { supabase } from '@/lib/supabase'
 import { createClient } from '@supabase/supabase-js'
 import { toast } from '@/hooks/use-toast'
-import { PDFUploadImproved } from '@/components/admin/pdf-upload-enhanced'
+import { PDFUploadImproved } from '@/components/admin/pdf-upload-improved'
 import { CategoryManager } from '@/components/admin/category-manager'
 import { SupabaseConnectionTest } from '@/components/admin/supabase-connection-test'
 import { DatabaseSchemaCheck } from '@/components/admin/database-schema-check'
@@ -318,14 +318,16 @@ export default function AdminPage() {
 
       {/* モーダルコンポーネント */}
       {showUpload && (
-        <PDFUploadImproved
-          categories={categories}
-          onClose={() => setShowUpload(false)}
-          onSuccess={() => {
-            setShowUpload(false)
-            loadAdminData()
-          }}
-        />
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <PDFUploadImproved
+            categories={categories}
+            onClose={() => setShowUpload(false)}
+            onSuccess={() => {
+              setShowUpload(false)
+              loadAdminData()
+            }}
+          />
+        </div>
       )}
 
       {showCategoryManager && (

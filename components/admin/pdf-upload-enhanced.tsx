@@ -70,18 +70,40 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
 
       setExtractedData(parsedData)
 
-      // データベースに問題を保存
+      // 問題セットを作成
+      const category = categories.find((c) => c.id === selectedCategory)
+      const { data: questionSet, error: setError } = await supabase
+        .from("question_sets")
+        .insert({
+          category_id: selectedCategory,
+          title: `PDF問題セット - ${new Date().toLocaleDateString("ja-JP")}`,
+          description: `${category?.name}の問題セット（PDF自動抽出）`,
+          order_index: 1,
+        })
+        .select()
+        .single()
+
+      if (setError) throw setError
+
+      // データベースに問題を保存（新しいスキーマ対応）
       const questionInserts = parsedData.questions.map((question, index) => ({
-        category_id: selectedCategory,
+        question_set_id: questionSet.id,
         question_text: question.questionText,
-        choices: question.choices,
-        correct_answer: question.correctAnswer || 1,
-        explanation: question.explanation || '',
-        difficulty_level: question.difficulty || 1,
-        points: (question.difficulty || 1) * 10
+        option_a: question.choices[0] || "選択肢A",
+        option_b: question.choices[1] || "選択肢B",
+        option_c: question.choices[2] || "選択肢C",
+        option_d: question.choices[3] || "選択肢D",
+        correct_answer: question.correctAnswer === 1 ? "A" : 
+                        question.correctAnswer === 2 ? "B" :
+                        question.correctAnswer === 3 ? "C" :
+                        question.correctAnswer === 4 ? "D" : "A",
+        difficulty: "medium" as const,
+        order_index: index + 1,
       }))
 
       setProgress(70)
+
+      console.log("PDF問題をデータベースに保存:", questionInserts)
 
       const { data, error } = await supabase
         .from('questions')
@@ -91,6 +113,11 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
       if (error) {
         throw new Error(`データベース保存エラー: ${error.message}`)
       }
+
+      // カテゴリーの問題数を更新
+      await supabase.rpc("update_category_question_count", {
+        category_id: selectedCategory,
+      })
 
       setProgress(100)
 

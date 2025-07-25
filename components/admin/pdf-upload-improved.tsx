@@ -174,79 +174,45 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
     setProgress(0)
 
     try {
-      // Step 1: 問題ファイルをSupabaseストレージにアップロード
       setProgress(20)
-      const sanitizedQuestionFileName = sanitizeFileName(questionFile.name)
-      const questionFileName = `questions_${Date.now()}_${sanitizedQuestionFileName}`
 
-      console.log("Uploading question file:", questionFileName)
-
-      const { data: questionUploadData, error: questionUploadError } = await supabase.storage
-        .from("pdfs")
-        .upload(questionFileName, questionFile)
-
-      if (questionUploadError) {
-        console.error("Question upload error:", questionUploadError)
-        throw new Error(`問題ファイルアップロードエラー: ${questionUploadError.message}`)
+      // ユーザー情報を取得
+      const { data: user } = await supabase.auth.getUser()
+      console.log('User authentication data:', {
+        user: user.user,
+        userId: user.user?.id,
+        isAuthenticated: !!user.user
+      })
+      
+      // FormDataを作成してAPIに送信
+      const formData = new FormData()
+      formData.append('questionFile', questionFile)
+      if (answerFile) {
+        formData.append('answerFile', answerFile)
       }
+      formData.append('categoryId', selectedCategory)
+      formData.append('userId', user.user?.id || 'anonymous')
 
       setProgress(40)
 
-      // Step 2: 解答ファイルがある場合はアップロード
-      let answerUploadData = null
-      if (answerFile) {
-        const sanitizedAnswerFileName = sanitizeFileName(answerFile.name)
-        const answerFileName = `answers_${Date.now()}_${sanitizedAnswerFileName}`
+      console.log("Sending files to API:", {
+        questionFile: questionFile.name,
+        answerFile: answerFile?.name,
+        categoryId: selectedCategory
+      })
 
-        console.log("Uploading answer file:", answerFileName)
+      const response = await fetch('/api/upload-pdf', {
+        method: 'POST',
+        body: formData,
+      })
 
-        const { data: answerUpload, error: answerUploadError } = await supabase.storage
-          .from("pdfs")
-          .upload(answerFileName, answerFile)
-
-        if (answerUploadError) {
-          console.error("Answer upload error:", answerUploadError)
-          throw new Error(`解答ファイルアップロードエラー: ${answerUploadError.message}`)
-        }
-
-        answerUploadData = answerUpload
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Upload failed')
       }
 
-      setProgress(60)
-
-      // Step 3: アップロード記録を保存
-      const { data: user } = await supabase.auth.getUser()
-
-      const uploadsToInsert = [
-        {
-          category_id: selectedCategory,
-          file_name: questionFile.name,
-          file_url: questionUploadData.path,
-          file_type: "questions" as const,
-          file_size: questionFile.size,
-          uploaded_by: user.user?.id,
-          is_processed: false,
-        },
-      ]
-
-      if (answerUploadData && answerFile) {
-        uploadsToInsert.push({
-          category_id: selectedCategory,
-          file_name: answerFile.name,
-          file_url: answerUploadData.path,
-          file_type: "answers" as const,
-          file_size: answerFile.size,
-          uploaded_by: user.user?.id,
-          is_processed: false,
-        })
-      }
-
-      const { error: recordError } = await supabase.from("pdf_uploads").insert(uploadsToInsert)
-
-      if (recordError) {
-        console.error("Record error:", recordError)
-        throw new Error(`記録保存エラー: ${recordError.message}`)
-      }
+      const result = await response.json()
+      console.log("Upload API result:", result)
 
       setProgress(100)
 
@@ -283,6 +249,8 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
     try {
       let questions = parseManualQuestions(manualQuestions)
 
+      console.log("Parsed questions:", questions)
+
       if (questions.length === 0) {
         throw new Error("有効な問題データが見つかりませんでした。フォーマットを確認してください。")
       }
@@ -293,52 +261,42 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
         questions = matchQuestionsWithAnswers(questions, answers)
       }
 
-      // 問題セットを作成
+      // APIを使用して問題を保存
       const category = categories.find((c) => c.id === selectedCategory)
-      const { data: questionSet, error: setError } = await supabase
-        .from("question_sets")
-        .insert({
-          category_id: selectedCategory,
-          title: `アップロード - ${new Date().toLocaleDateString("ja-JP")}`,
-          description: `${category?.name}の問題セット（${answerFile ? "解答付き" : "手動入力"}）`,
-          order_index: 1,
-        })
-        .select()
-        .single()
+      const requestBody = {
+        categoryId: selectedCategory,
+        questions: questions,
+        title: `アップロード - ${new Date().toLocaleDateString("ja-JP")}`,
+        description: `${category?.name}の問題セット（${answerFile ? "解答付き" : "手動入力"}）`
+      }
 
-      if (setError) throw setError
+      console.log("Sending questions to API:", requestBody)
 
-      // 問題を挿入
-      const questionsToInsert = questions.map((q, index) => ({
-        question_set_id: questionSet.id,
-        question_text: q.question_text,
-        option_a: q.option_a,
-        option_b: q.option_b,
-        option_c: q.option_c,
-        option_d: q.option_d,
-        option_e: q.option_e,
-        correct_answer: q.correct_answer || "A",
-        difficulty: "medium" as const,
-        order_index: index + 1,
-      }))
-
-      const { error: questionsError } = await supabase.from("questions").insert(questionsToInsert)
-
-      if (questionsError) throw questionsError
-
-      // カテゴリーの問題数を更新
-      await supabase.rpc("update_category_question_count", {
-        category_id: selectedCategory,
+      const response = await fetch('/api/save-questions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
       })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Save failed')
+      }
+
+      const result = await response.json()
+      console.log("Save API result:", result)
 
       toast({
         title: "問題を保存しました",
-        description: `${questions.length}問をデータベースに保存しました。`,
+        description: result.message,
       })
 
       setStep("complete")
       onSuccess()
     } catch (error: any) {
+      console.error("Save process error:", error)
       toast({
         title: "保存エラー",
         description: error.message,
