@@ -11,13 +11,18 @@ import { toast } from "@/hooks/use-toast"
 
 interface Question {
   id: string
-  category_id: string
   question_text: string
-  choices: string[]
-  correct_answer: number
+  option_a: string
+  option_b: string
+  option_c: string
+  option_d: string
+  option_e: string
+  correct_answer: string
+  correct_answer_index: number
   explanation?: string
   difficulty_level: number
   points: number
+  choices: string[]
 }
 
 interface QuizRunnerProps {
@@ -94,8 +99,14 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
         return
       }
 
-      // データをシャッフル
-      const shuffledQuestions = questionsData.sort(() => 0.5 - Math.random())
+      // データをシャッフルして、choicesを作成
+      const processedQuestions = questionsData.map((q: any) => ({
+        ...q,
+        choices: [q.option_a, q.option_b, q.option_c, q.option_d, q.option_e].filter(Boolean),
+        correct_answer_index: ['a', 'b', 'c', 'd', 'e'].indexOf(q.correct_answer.toLowerCase())
+      }))
+      
+      const shuffledQuestions = processedQuestions.sort(() => 0.5 - Math.random())
       setQuestions(shuffledQuestions)
       setLoading(false)
     } catch (error: any) {
@@ -115,7 +126,7 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
     setSelectedAnswer(answerIndex)
     setIsAnswered(true)
     
-    if (answerIndex === questions[currentQuestionIndex].correct_answer) {
+    if (answerIndex === questions[currentQuestionIndex].correct_answer_index) {
       setScore(prev => prev + 1)
     }
   }
@@ -244,6 +255,29 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
   const currentQuestion = questions[currentQuestionIndex]
   const progress = ((currentQuestionIndex + 1) / questions.length) * 100
 
+  // 現在の問題が存在しない場合の安全チェック
+  if (!currentQuestion || !currentQuestion.choices || currentQuestion.choices.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50 p-4 flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardContent className="p-8 text-center">
+            <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              問題データエラー
+            </h3>
+            <p className="text-gray-600 mb-4">
+              問題データが正しく読み込まれませんでした。
+            </p>
+            <Button onClick={onBack} variant="outline">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              戻る
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50 p-4">
       <div className="max-w-3xl mx-auto pt-8">
@@ -303,7 +337,7 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
                 let buttonClassName = "w-full justify-start text-left h-auto p-4 border-2 transition-all"
                 
                 if (isAnswered) {
-                  if (index === currentQuestion.correct_answer) {
+                  if (index === currentQuestion.correct_answer_index) {
                     buttonVariant = "default"
                     buttonClassName += " bg-green-100 border-green-500 text-green-800"
                   } else if (index === selectedAnswer) {
@@ -329,10 +363,10 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
                         {String.fromCharCode(65 + index)}
                       </span>
                       <span className="flex-1">{choice}</span>
-                      {isAnswered && index === currentQuestion.correct_answer && (
+                      {isAnswered && index === currentQuestion.correct_answer_index && (
                         <CheckCircle className="h-5 w-5 text-green-600" />
                       )}
-                      {isAnswered && index === selectedAnswer && index !== currentQuestion.correct_answer && (
+                      {isAnswered && index === selectedAnswer && index !== currentQuestion.correct_answer_index && (
                         <XCircle className="h-5 w-5 text-red-600" />
                       )}
                     </div>
