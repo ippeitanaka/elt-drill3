@@ -30,77 +30,30 @@ export function CategorySelector({ onStartQuiz }: CategorySelectorProps) {
     try {
       setLoading(true)
       
-      // Supabaseからカテゴリーを取得
-      const { data: categoriesData, error: categoriesError } = await supabase
-        .from('categories')
-        .select('*')
-        .order('created_at', { ascending: true })
-
-      if (categoriesError) {
-        console.error('カテゴリー取得エラー:', categoriesError)
-        setLoading(false)
-        return
+      console.log('CategorySelector: API経由でデータ取得開始')
+      
+      // APIエンドポイントからデータを取得
+      const response = await fetch('/api/quiz-categories')
+      const result = await response.json()
+      
+      console.log('CategorySelector: API結果', result)
+      
+      if (!result.success) {
+        throw new Error(result.error || 'API request failed')
       }
-
-      // カテゴリーデータを変換
-      const fetchedCategories: Category[] = categoriesData?.map((item: any) => ({
-        id: item.id,
-        name: item.name,
-        icon: item.icon || "📚",
-        color: item.color || "bg-blue-500", 
-        description: item.description || "",
-        total_questions: 0, // 後で問題数を取得
-        created_at: item.created_at,
-        updated_at: item.created_at
-      })) || []
-
-      // 問題セットを取得
-      const { data: setsData, error: setsError } = await supabase
-        .from('question_sets')
-        .select('*')
-        .order('order_index', { ascending: true })
-
-      if (setsError) {
-        console.error('問題セット取得エラー:', setsError)
-      }
-
-      // 問題セットをカテゴリー別にグループ化
-      const groupedSets: Record<string, QuestionSet[]> = {}
-      setsData?.forEach((set: any) => {
-        if (!groupedSets[set.category_id]) {
-          groupedSets[set.category_id] = []
-        }
-        groupedSets[set.category_id].push({
-          id: set.id,
-          category_id: set.category_id,
-          title: set.title,
-          description: set.description,
-          order_index: set.order_index,
-          is_active: set.is_active,
-          created_at: set.created_at,
-          updated_at: set.updated_at
-        })
+      
+      const { categories: fetchedCategories, questionSets: groupedSets } = result.data
+      
+      console.log('CategorySelector: 処理されたデータ', {
+        categoriesCount: fetchedCategories.length,
+        questionSetsCount: Object.keys(groupedSets).length
       })
-
-      // 各カテゴリーの問題数を取得（question_sets経由）
-      for (const category of fetchedCategories) {
-        const questionSetIds = groupedSets[category.id]?.map(set => set.id) || []
-        console.log(`カテゴリー ${category.name} の問題セットIDs:`, questionSetIds)
-        
-        const { count } = await supabase
-          .from('questions')
-          .select('*', { count: 'exact', head: true })
-          .in('question_set_id', questionSetIds)
-        
-        category.total_questions = count || 0
-        console.log(`カテゴリー ${category.name} の問題数: ${category.total_questions}`)
-      }
 
       setCategories(fetchedCategories)
       setQuestionSets(groupedSets)
       setLoading(false)
       
-      console.log('最終的なカテゴリー一覧:', fetchedCategories.map(c => ({
+      console.log('最終的なカテゴリー一覧:', fetchedCategories.map((c: any) => ({
         name: c.name,
         id: c.id,
         total_questions: c.total_questions,
