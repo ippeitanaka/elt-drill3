@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
       const choices = q.choices || []
       return {
         question_set_id: questionSet.id,
+        category_id: categoryId, // category_idを追加
         question_text: q.question_text,
         option_a: choices[0] || q.option_a || "選択肢1",
         option_b: choices[1] || q.option_b || "選択肢2", 
@@ -64,14 +65,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // カテゴリーの問題数を更新
+    // カテゴリーの問題数を直接更新
     try {
-      await adminClient.rpc("update_category_question_count", {
-        category_id: categoryId,
-      })
-    } catch (rpcError) {
-      console.warn("Category count update failed:", rpcError)
-      // RPCが失敗してもエラーにしない
+      const { count } = await adminClient
+        .from("questions")
+        .select("*", { count: "exact", head: true })
+        .eq("category_id", categoryId)
+
+      await adminClient
+        .from("categories")
+        .update({ question_count: count || 0 })
+        .eq("id", categoryId)
+
+      console.log(`Updated category ${categoryId} question count to ${count}`)
+    } catch (updateError) {
+      console.warn("Category count update failed:", updateError)
+      // カウント更新が失敗してもエラーにしない
     }
 
     return NextResponse.json({ 
