@@ -84,17 +84,28 @@ export function CategorySelector({ onStartQuiz }: CategorySelectorProps) {
 
       // 各カテゴリーの問題数を取得（question_sets経由）
       for (const category of fetchedCategories) {
+        const questionSetIds = groupedSets[category.id]?.map(set => set.id) || []
+        console.log(`カテゴリー ${category.name} の問題セットIDs:`, questionSetIds)
+        
         const { count } = await supabase
           .from('questions')
           .select('*', { count: 'exact', head: true })
-          .in('question_set_id', groupedSets[category.id]?.map(set => set.id) || [])
+          .in('question_set_id', questionSetIds)
         
         category.total_questions = count || 0
+        console.log(`カテゴリー ${category.name} の問題数: ${category.total_questions}`)
       }
 
       setCategories(fetchedCategories)
       setQuestionSets(groupedSets)
       setLoading(false)
+      
+      console.log('最終的なカテゴリー一覧:', fetchedCategories.map(c => ({
+        name: c.name,
+        id: c.id,
+        total_questions: c.total_questions,
+        question_sets: groupedSets[c.id]?.length || 0
+      })))
     } catch (error) {
       console.error("データ取得エラー:", error)
       setLoading(false)
@@ -186,9 +197,15 @@ export function CategorySelector({ onStartQuiz }: CategorySelectorProps) {
         <p className="text-gray-500">
           管理者がカテゴリーを追加するまでお待ちください。
         </p>
+        <div className="mt-4 text-xs text-gray-400">
+          デバッグ: カテゴリー数 = {categories.length}
+        </div>
       </div>
     )
   }
+
+  // デバッグ: 問題数が0のカテゴリーも表示
+  const displayCategories = categories // 元: categories.filter(c => c.total_questions > 0)
 
   return (
     <div className="space-y-6">
@@ -200,7 +217,7 @@ export function CategorySelector({ onStartQuiz }: CategorySelectorProps) {
       </div>
 
       <div className="grid gap-4">
-        {categories.map((category: Category) => (
+        {displayCategories.map((category: Category) => (
           <Card key={category.id} className="overflow-hidden">
             <Collapsible
               open={openCategories.has(category.id)}

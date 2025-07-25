@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Database Debug Tool</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .button:hover { background: #0056b3; }
+        .result { background: #f8f9fa; padding: 10px; margin: 10px 0; border-radius: 3px; white-space: pre-wrap; font-family: monospace; }
+        .error { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+        .success { background: #d4edda; border-color: #c3e6cb; color: #155724; }
+    </style>
+</head>
+<body>
+    <h1>ELT Drill Database Debug Tool</h1>
+    
+    <div class="section">
+        <h2>Database State Check</h2>
+        <button class="button" onclick="checkDatabaseState()">Check Database State</button>
+        <div id="dbState" class="result"></div>
+    </div>
+    
+    <div class="section">
+        <h2>Update Category Counts</h2>
+        <button class="button" onclick="updateCategoryCounts()">Update Category Counts</button>
+        <div id="updateResult" class="result"></div>
+    </div>
+    
+    <div class="section">
+        <h2>Test Category Selection</h2>
+        <button class="button" onclick="testCategorySelection()">Test Category Selection Logic</button>
+        <div id="categoryTest" class="result"></div>
+    </div>
+
+    <script>
+        async function checkDatabaseState() {
+            const resultDiv = document.getElementById('dbState');
+            resultDiv.textContent = 'Loading...';
+            
+            try {
+                const response = await fetch('/api/debug');
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.textContent = `Database State:
+Categories: ${data.data.categories.length}
+Question Sets: ${data.data.questionSets.length}
+Recent Questions: ${data.data.recentQuestions.length}
+
+Category Details:
+${data.data.categories.map(cat => 
+  `- ${cat.name}: ${cat.actual_question_count} questions (stored count: ${cat.question_count})`
+).join('\n')}`;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.textContent = `Error: ${data.error}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Network Error: ${error.message}`;
+            }
+        }
+        
+        async function updateCategoryCounts() {
+            const resultDiv = document.getElementById('updateResult');
+            resultDiv.textContent = 'Updating...';
+            
+            try {
+                const response = await fetch('/api/update-category-counts', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.textContent = `${data.message}
+
+Updates:
+${data.updates.map(u => `- ${u.categoryName}: ${u.questionCount} questions`).join('\n')}`;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.textContent = `Error: ${data.error}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Network Error: ${error.message}`;
+            }
+        }
+        
+        async function testCategorySelection() {
+            const resultDiv = document.getElementById('categoryTest');
+            resultDiv.textContent = 'Testing...';
+            
+            try {
+                // Simulate the same logic as CategorySelector
+                const categoriesResponse = await fetch('/api/debug');
+                const categoriesData = await categoriesResponse.json();
+                
+                if (!categoriesData.success) {
+                    throw new Error(categoriesData.error);
+                }
+                
+                const categories = categoriesData.data.categories;
+                const categoriesWithQuestions = categories.filter(cat => cat.actual_question_count > 0);
+                
+                resultDiv.className = 'result success';
+                resultDiv.textContent = `Category Selection Test Results:
+
+Total Categories: ${categories.length}
+Categories with Questions: ${categoriesWithQuestions.length}
+
+Categories that would be displayed:
+${categoriesWithQuestions.map(cat => 
+  `- ${cat.name}: ${cat.actual_question_count} questions`
+).join('\n')}
+
+Categories that would NOT be displayed:
+${categories.filter(cat => cat.actual_question_count === 0).map(cat => 
+  `- ${cat.name}: 0 questions`
+).join('\n')}`;
+                
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Test Error: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>
