@@ -82,12 +82,12 @@ export function CategorySelector({ onStartQuiz }: CategorySelectorProps) {
         })
       })
 
-      // 各カテゴリーの問題数を取得
+      // 各カテゴリーの問題数を取得（question_sets経由）
       for (const category of fetchedCategories) {
         const { count } = await supabase
           .from('questions')
           .select('*', { count: 'exact', head: true })
-          .eq('category_id', category.id)
+          .in('question_set_id', groupedSets[category.id]?.map(set => set.id) || [])
         
         category.total_questions = count || 0
       }

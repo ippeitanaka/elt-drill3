@@ -40,7 +40,6 @@ export async function POST(request: NextRequest) {
       const choices = q.choices || []
       return {
         question_set_id: questionSet.id,
-        category_id: categoryId, // category_idを追加
         question_text: q.question_text,
         option_a: choices[0] || q.option_a || "選択肢1",
         option_b: choices[1] || q.option_b || "選択肢2", 

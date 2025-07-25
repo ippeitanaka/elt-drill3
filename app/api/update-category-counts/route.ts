@@ -18,10 +18,19 @@ export async function POST(request: NextRequest) {
     
     // 各カテゴリーの実際の問題数を計算して更新
     for (const category of categories) {
+      // そのカテゴリーのquestion_setsを取得
+      const { data: categoryQuestionSets } = await adminClient
+        .from('question_sets')
+        .select('id')
+        .eq('category_id', category.id)
+      
+      const questionSetIds = categoryQuestionSets?.map(qs => qs.id) || []
+      
+      // question_sets経由で問題数を数える
       const { count } = await adminClient
         .from('questions')
         .select('*', { count: 'exact', head: true })
-        .eq('category_id', category.id)
+        .in('question_set_id', questionSetIds)
       
       const { error: updateError } = await adminClient
         .from('categories')
