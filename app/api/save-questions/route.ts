@@ -52,7 +52,27 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    console.log("Inserting questions to database:", questionsToInsert)
+        console.log("Save questions API - 受信データ:", {
+      categoryId,
+      questionsCount: questions.length,
+      title,
+      description
+    })
+
+    // 問題データの詳細ログ
+    questions.forEach((q: any, index: number) => {
+      console.log(`問題${index + 1}:`, {
+        question_text: q.question_text?.substring(0, 100) + "...",
+        option_a: q.option_a?.substring(0, 50) + "...",
+        option_b: q.option_b?.substring(0, 50) + "...", 
+        option_c: q.option_c?.substring(0, 50) + "...",
+        option_d: q.option_d?.substring(0, 50) + "...",
+        option_e: q.option_e?.substring(0, 50) + "...",
+        correct_answer: q.correct_answer,
+        hasChoices: !!q.choices,
+        choicesLength: q.choices?.length || 0
+      })
+    })
 
     const { error: questionsError } = await adminClient.from("questions").insert(questionsToInsert)
 
