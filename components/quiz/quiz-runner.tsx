@@ -54,23 +54,35 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
     try {
       setLoading(true)
       
-      // 選択されたカテゴリーの問題を取得
-      const { data: questionsData, error } = await supabase
-        .from('questions')
-        .select('*')
-        .in('category_id', selectedCategories)
-        .order('id')
-        .limit(20) // 最大20問
+      console.log('QuizRunner: 問題取得開始', {
+        selectedCategories,
+        selectedSets
+      })
+      
+      // APIエンドポイントから問題を取得
+      const response = await fetch('/api/quiz-questions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          selectedCategories,
+          selectedSets,
+          questionCount: 20
+        }),
+      })
 
-      if (error) {
-        console.error('問題取得エラー:', error)
-        toast({
-          title: "エラー",
-          description: "問題の取得に失敗しました。",
-          variant: "destructive",
-        })
-        return
+      const result = await response.json()
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Questions fetch failed')
       }
+
+      const questionsData = result.data
+
+      console.log('QuizRunner: 問題取得完了', {
+        questionsCount: questionsData.length
+      })
 
       if (!questionsData || questionsData.length === 0) {
         toast({
@@ -78,40 +90,6 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
           description: "選択されたカテゴリーに問題がありません。",
           variant: "destructive",
         })
-        // モックデータを代わりに使用
-        const mockQuestions: Question[] = [
-          {
-            id: "mock-1",
-            category_id: selectedCategories[0] || "1",
-            question_text: "次の文で正しい文法はどれですか？",
-            choices: [
-              "I have been study English for 3 years.",
-              "I have been studying English for 3 years.",
-              "I am been studying English for 3 years.",
-              "I have studying English for 3 years."
-            ],
-            correct_answer: 1,
-            explanation: "現在完了進行形の正しい形は 'have been studying' です。",
-            difficulty_level: 2,
-            points: 20
-          },
-          {
-            id: "mock-2", 
-            category_id: selectedCategories[0] || "1",
-            question_text: "'Ambitious' の意味として最も適切なものはどれですか？",
-            choices: [
-              "野心的な",
-              "曖昧な", 
-              "好奇心旺盛な",
-              "注意深い"
-            ],
-            correct_answer: 0,
-            explanation: "Ambitious は「野心的な、向上心のある」という意味です。",
-            difficulty_level: 1,
-            points: 10
-          }
-        ]
-        setQuestions(mockQuestions)
         setLoading(false)
         return
       }
@@ -120,11 +98,11 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
       const shuffledQuestions = questionsData.sort(() => 0.5 - Math.random())
       setQuestions(shuffledQuestions)
       setLoading(false)
-    } catch (error) {
+    } catch (error: any) {
       console.error('問題読み込みエラー:', error)
       toast({
         title: "エラー",
-        description: "問題の読み込み中にエラーが発生しました。",
+        description: error.message || "問題の読み込み中にエラーが発生しました。",
         variant: "destructive",
       })
       setLoading(false)
