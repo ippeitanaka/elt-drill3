@@ -106,7 +106,24 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
         correct_answer_index: ['a', 'b', 'c', 'd', 'e'].indexOf(q.correct_answer.toLowerCase())
       }))
       
-      const shuffledQuestions = processedQuestions.sort(() => 0.5 - Math.random())
+      // 重複を除去（IDベース）
+      const uniqueQuestions = processedQuestions.filter((question: any, index: number, self: any[]) => 
+        index === self.findIndex((q: any) => q.id === question.id)
+      )
+      
+      // Fisher-Yates アルゴリズムでシャッフル
+      const shuffledQuestions = [...uniqueQuestions]
+      for (let i = shuffledQuestions.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledQuestions[i], shuffledQuestions[j]] = [shuffledQuestions[j], shuffledQuestions[i]]
+      }
+      
+      console.log('QuizRunner: 問題処理完了', {
+        originalCount: questionsData.length,
+        uniqueCount: uniqueQuestions.length,
+        finalCount: shuffledQuestions.length
+      })
+      
       setQuestions(shuffledQuestions)
       setLoading(false)
     } catch (error: any) {
