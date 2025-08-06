@@ -6,7 +6,7 @@ export async function POST(request: NextRequest) {
     const adminClient = createServerClient()
     const body = await request.json()
     
-    const { selectedCategories, selectedSets, questionCount = 20 } = body
+    const { selectedCategories, selectedSets, questionCount = 1000 } = body
 
     console.log('Quiz questions API: データ取得開始', {
       selectedCategories,
@@ -17,13 +17,12 @@ export async function POST(request: NextRequest) {
     let questions = []
 
     if (selectedSets && selectedSets.length > 0) {
-      // 特定の問題セットから取得
+      // 特定の問題セットから取得（制限なし）
       const { data, error } = await adminClient
         .from('questions')
         .select('*')
         .in('question_set_id', selectedSets)
         .order('question_number', { ascending: true })
-        .limit(questionCount)
 
       if (error) {
         console.error('Questions by sets error:', error)
@@ -50,7 +49,6 @@ export async function POST(request: NextRequest) {
           .select('*')
           .in('question_set_id', questionSetIds)
           .order('question_number', { ascending: true })
-          .limit(questionCount)
 
         if (error) {
           console.error('Questions by categories error:', error)

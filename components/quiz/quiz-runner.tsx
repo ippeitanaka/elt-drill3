@@ -64,7 +64,7 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
         selectedSets
       })
       
-      // APIエンドポイントから問題を取得
+      // APIエンドポイントから問題を取得（制限なし）
       const response = await fetch('/api/quiz-questions', {
         method: 'POST',
         headers: {
@@ -73,7 +73,7 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
         body: JSON.stringify({
           selectedCategories,
           selectedSets,
-          questionCount: 100 // より多くの問題を取得
+          questionCount: 1000 // すべての問題を取得（制限なし）
         }),
       })
 

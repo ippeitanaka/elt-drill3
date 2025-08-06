@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
+import { processQuizPDFs } from '@/lib/ocr-enhanced'
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,10 +26,59 @@ export async function POST(request: NextRequest) {
       targetQuestionCount
     })
 
-    // 簡単なアプローチ: サンプル問題を大量生成して保存
-    const questions = generateSampleQuestions(targetQuestionCount) // 指定された問題数を生成
+    let questions = []
 
-    console.log(`サンプル問題生成完了: ${questions.length}問`)
+    if (questionFileUrl) {
+      try {
+        // 実際のPDFからOCRで問題を抽出
+        console.log('PDFからOCRで問題抽出を開始します...')
+        
+        // PDFファイルをダウンロード
+        const pdfResponse = await fetch(questionFileUrl)
+        if (!pdfResponse.ok) {
+          throw new Error(`PDF download failed: ${pdfResponse.status}`)
+        }
+        
+        const pdfBuffer = await pdfResponse.arrayBuffer()
+        const pdfFile = new File([pdfBuffer], 'questions.pdf', { type: 'application/pdf' })
+        
+        // OCRで問題を抽出
+        const answerFile = answerFileUrl ? 
+          await fetch(answerFileUrl).then(r => r.arrayBuffer()).then(b => new File([b], 'answers.pdf', { type: 'application/pdf' })) : 
+          undefined
+        
+        const ocrResult = await processQuizPDFs(pdfFile, answerFile)
+        
+        if (ocrResult.questions && ocrResult.questions.length > 0) {
+          questions = ocrResult.questions.map((q, index) => ({
+            question_text: q.questionText,
+            options: {
+              a: q.choices[0] || '',
+              b: q.choices[1] || '',
+              c: q.choices[2] || '',
+              d: q.choices[3] || '',
+              e: q.choices[4] || ''
+            },
+            correct_answer: q.correctAnswer ? ['a', 'b', 'c', 'd', 'e'][q.correctAnswer - 1] : 'a'
+          }))
+          
+          console.log(`OCRから${questions.length}問を抽出しました`)
+        } else {
+          throw new Error('OCR処理で問題を抽出できませんでした')
+        }
+        
+      } catch (ocrError) {
+        console.error('OCR処理エラー、サンプル問題生成にフォールバック:', ocrError)
+        
+        // OCRが失敗した場合は指定された数のサンプル問題を生成
+        questions = generateSampleQuestions(targetQuestionCount)
+        console.log(`OCR失敗のためサンプル問題を${questions.length}問生成しました`)
+      }
+    } else {
+      // PDFファイルURLがない場合はサンプル問題を生成
+      questions = generateSampleQuestions(targetQuestionCount)
+      console.log(`サンプル問題を${questions.length}問生成しました`)
+    }
 
     // 既存の問題セットを使用するか新規作成
     let questionSetId
@@ -61,9 +111,10 @@ export async function POST(request: NextRequest) {
       questionSetId = newSet.id
     }
 
-    // 問題をバッチで保存（メモリ効率を考慮）
-    const batchSize = 20
+    // 問題をバッチで保存（メモリ効率とエラー処理を改善）
+    const batchSize = 10 // バッチサイズを小さくして安定性向上
     let savedCount = 0
+    let totalErrors = 0
     
     for (let i = 0; i < questions.length; i += batchSize) {
       const batch = questions.slice(i, i + batchSize)
@@ -78,17 +129,26 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      const { error: insertError } = await adminClient
-        .from("questions")
-        .insert(questionsToInsert)
+      try {
+        const { data, error: insertError } = await adminClient
+          .from("questions")
+          .insert(questionsToInsert)
+          .select()
 
-      if (insertError) {
-        console.error(`Batch ${i / batchSize + 1} insert error:`, insertError)
-        // エラーが発生しても処理を続行
-      } else {
-        savedCount += questionsToInsert.length
-        console.log(`Batch ${i / batchSize + 1} saved: ${questionsToInsert.length} questions`)
+        if (insertError) {
+          console.error(`Batch ${Math.floor(i / batchSize) + 1} insert error:`, insertError)
+          totalErrors += questionsToInsert.length
+        } else {
+          savedCount += questionsToInsert.length
+          console.log(`Batch ${Math.floor(i / batchSize) + 1} saved: ${questionsToInsert.length} questions (total: ${savedCount})`)
+        }
+      } catch (batchError) {
+        console.error(`Batch ${Math.floor(i / batchSize) + 1} critical error:`, batchError)
+        totalErrors += questionsToInsert.length
       }
+      
+      // バッチ間に短い待機時間を入れる
+      await new Promise(resolve => setTimeout(resolve, 100))
     }
 
     return NextResponse.json({
@@ -97,9 +157,10 @@ export async function POST(request: NextRequest) {
         questionSetId,
         totalExtracted: questions.length,
         totalSaved: savedCount,
+        totalErrors: totalErrors,
         extractedQuestions: questions.slice(0, 5) // 最初の5問をサンプルとして返す
       },
-      message: `${questions.length}問を生成し、${savedCount}問をデータベースに保存しました。`
+      message: `${questions.length}問を生成し、${savedCount}問をデータベースに保存しました。${totalErrors > 0 ? `(${totalErrors}問でエラー発生)` : ''}`
     })
 
   } catch (error: any) {
