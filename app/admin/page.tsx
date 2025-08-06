@@ -5,9 +5,10 @@ import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Brain, Upload, Settings, Users, Database, BarChart, Sparkles, Plus, Edit, Wifi } from 'lucide-react'
-import { getSupabaseClient } from '@/lib/supabase'
+import { getSupabaseClient, createServerClient } from '@/lib/supabase'
 import { toast } from '@/hooks/use-toast'
 import { PDFUploadImproved } from '@/components/admin/pdf-upload-improved'
+import { PDFUploadNew } from '@/components/admin/pdf-upload-new'
 import SimpleCategoryManager from '@/components/admin/simple-category-manager'
 import { SupabaseConnectionTest } from '@/components/admin/supabase-connection-test'
 import { DatabaseSchemaCheck } from '@/components/admin/database-schema-check'
@@ -56,19 +57,25 @@ export default function AdminPage() {
 
   const loadAdminData = async () => {
     try {
-      console.log('管理画面でカテゴリー取得開始')
+      console.log('🔄 管理画面でカテゴリー取得開始')
       
-      const { data: categoriesData, error: categoriesError } = await supabase
-        .from('categories')
-        .select('*')
-        .order('name')
-
-      if (categoriesError) {
-        console.error('カテゴリー取得エラー:', categoriesError)
-        throw categoriesError
+      // APIからカテゴリーを取得
+      const response = await fetch('/api/debug-categories')
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`)
       }
+      
+      const categoryResult = await response.json()
+      console.log('📊 カテゴリーAPI結果:', categoryResult)
+      
+      if (!categoryResult.success) {
+        throw new Error(categoryResult.error || 'カテゴリー取得に失敗しました')
+      }
+      
+      const categoriesData = categoryResult.data || []
+      console.log('📊 生データ確認:', categoriesData)
 
-      const formattedCategories: Category[] = categoriesData?.map(item => ({
+      const formattedCategories: Category[] = categoriesData.map((item: any) => ({
         id: String(item.id),
         name: String(item.name),
         icon: String(item.icon || '📚'), // デフォルトアイコン
@@ -77,36 +84,38 @@ export default function AdminPage() {
         total_questions: Number(item.total_questions || 0), // デフォルト0
         created_at: String(item.created_at),
         updated_at: String(item.updated_at || item.created_at), // created_atをフォールバック
-      })) || []
+      }))
+
+      console.log('📋 フォーマット後:', formattedCategories)
 
       setCategories(formattedCategories)
-
-      const questionsResult = await supabase.from('questions').select('id', { count: 'exact' })
-      let usersCount = 0
-      let quizzesCount = 0
-      
-      try {
-        const usersResult = await supabase.from('profiles').select('id', { count: 'exact' })
-        usersCount = usersResult.count || 0
-      } catch (error) {
-        console.log('profilesテーブルが存在しません')
-      }
-      
-      try {
-        // quiz_sessionsテーブルの代わりに、question_setsテーブルの数を使用
-        const quizzesResult = await supabase.from('question_sets').select('id', { count: 'exact' })
-        quizzesCount = quizzesResult.count || 0
-      } catch (error) {
-        console.log('question_setsテーブルから情報を取得できませんでした')
-        quizzesCount = 0
-      }
-
-      setStats({
-        totalQuestions: questionsResult.count || 0,
-        totalUsers: usersCount,
-        totalQuizzes: quizzesCount,
-        categoriesCount: formattedCategories.length
+      console.log('✅ 管理画面: カテゴリー取得完了', {
+        count: formattedCategories.length,
+        categories: formattedCategories
       })
+
+      // 統計情報を取得
+      try {
+        const statsResponse = await fetch('/api/debug-table-structure')
+        const statsResult = await statsResponse.json()
+        
+        if (statsResult.success) {
+          setStats({
+            totalQuestions: statsResult.data.questionsCount || 0,
+            totalUsers: 0, // profilesテーブルが存在しないため0
+            totalQuizzes: statsResult.data.questionSets?.length || 0,
+            categoriesCount: formattedCategories.length
+          })
+        }
+      } catch (statsError) {
+        console.warn('統計情報の取得に失敗:', statsError)
+        setStats({
+          totalQuestions: 0,
+          totalUsers: 0,
+          totalQuizzes: 0,
+          categoriesCount: formattedCategories.length
+        })
+      }
 
     } catch (error: any) {
       console.error('管理データ読み込みエラー:', error)
@@ -146,6 +155,10 @@ export default function AdminPage() {
               </p>
               <Button 
                 onClick={() => {
+                  console.log('🚀 PDFアップロード画面を開きます', {
+                    categoriesCount: categories.length,
+                    categories: categories.map(c => ({ id: c.id, name: c.name }))
+                  })
                   setShowUpload(true)
                 }}
                 className="w-full bg-red-600 hover:bg-red-700"
@@ -258,16 +271,18 @@ export default function AdminPage() {
 
       {/* モーダルコンポーネント */}
       {showUpload && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <PDFUploadImproved
-            categories={[]} // 空配列に変更（コンポーネント内で取得）
-            onClose={() => setShowUpload(false)}
-            onSuccess={() => {
-              setShowUpload(false)
-              loadAdminData()
-            }}
-          />
-        </div>
+        <PDFUploadNew
+          categories={categories}
+          onClose={() => {
+            console.log('🔒 PDFアップロード画面を閉じます')
+            setShowUpload(false)
+          }}
+          onSuccess={() => {
+            console.log('✅ PDFアップロード成功')
+            setShowUpload(false)
+            loadAdminData()
+          }}
+        />
       )}
 
       {showCategoryManager && (

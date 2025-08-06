@@ -22,23 +22,33 @@ export interface ParsedQuizData {
   }
 }
 
-// 日本語・英語対応の正規表現パターン
+// 日本語・英語対応の正規表現パターン（改善版）
 const QUESTION_PATTERNS = [
-  /(?:問題?|Question|Q)[\s\d]+[．.\)）]\s*(.+?)(?=(?:問題?|Question|Q)[\s\d]+[．.\)）]|\s*[1-5ア-オa-e]\s*[\.．\)）]|$)/gms,
-  /(\d+)[．.\)）]\s*(.+?)(?=\d+[．.\)）]|\s*[1-5ア-オa-e]\s*[\.．\)）]|$)/gms,
-  /(?:^|\n)\s*(.+?\?)\s*(?=\n\s*[1-5ア-オa-e]|\n\s*[1-5]\s*[\.．\)）]|$)/gm,
-  /(?:次の|以下の|下記の)(.+?)(?:選択|選ん|答え)/g,
-  /(.+?)(?:について|に関して|で)(?:正しい|適切な|最も|もっとも)(?:もの|答え|選択肢)(?:を|は)/g
+  // 「問題1.」「問題 1」「1.」形式
+  /(?:問題?\s*\d+\s*[．.\)）:：]|第?\s*\d+\s*問[．.\)）:：]?)\s*(.+?)(?=(?:問題?\s*\d+\s*[．.\)）:：]|第?\s*\d+\s*問[．.\)）:：]?)|(?=\s*[1-5ア-オa-eA-E]\s*[．.\)）])|$)/gms,
+  // 数字のみの問題番号
+  /(?:^|\n)\s*(\d+)\s*[．.\)）:：]\s*(.+?)(?=(?:^|\n)\s*\d+\s*[．.\)）:：]|(?=\s*[1-5ア-オa-eA-E]\s*[．.\)）])|$)/gms,
+  // 質問文パターン
+  /(?:^|\n)\s*(.+?[？?])\s*(?=\s*[1-5ア-オa-eA-E]\s*[．.\)）]|$)/gm,
+  // 「次の中から」「以下の中で」パターン
+  /(?:次の中から|以下の中で|下記の中から|以下のうち)(.+?)(?:選択|選ん|答え|該当)/g,
+  // 「について正しい」パターン
+  /(.+?)(?:について|に関して|において)(?:正しい|適切な|最も|もっとも)(?:もの|答え|選択肢|記述)(?:を|は|が)/g,
+  // 「どれか」パターン  
+  /(.+?)(?:どれか|いずれか|どちらか)[．.?？]?\s*$/gm
 ]
 
 const CHOICE_PATTERNS = [
-  /^[1-5ア-オa-e]\s*[\.．\)）]\s*(.+?)$/gm,
-  /^[①-⑤]\s*(.+?)$/gm,
-  /^[A-E]\s*[\.．\)）]\s*(.+?)$/gm,
-  /^\([1-5ア-オa-e]\)\s*(.+?)$/gm,
-  /^[1-5]\s*:\s*(.+?)$/gm,
-  /^[・•]\s*(.+?)$/gm,
-  /^\d+\)\s*(.+?)$/gm
+  // 基本的な選択肢パターン
+  /^\s*([1-5ア-オa-eA-E①-⑤])\s*[．.\)）]\s*(.+?)$/gm,
+  // 括弧付き選択肢
+  /^\s*\(([1-5ア-オa-eA-E①-⑤])\)\s*(.+?)$/gm,
+  // コロン付き選択肢
+  /^\s*([1-5ア-オa-eA-E①-⑤])\s*[:：]\s*(.+?)$/gm,
+  // ハイフン・箇条書き
+  /^\s*[・•-]\s*(.+?)$/gm,
+  // 数字のみ
+  /^\s*(\d+)\s*[．.\)）]\s*(.+?)$/gm
 ]
 
 const ANSWER_PATTERNS = [
@@ -58,54 +68,101 @@ export function debugPDFText(text: string): void {
   console.log('=== テキスト終了 ===')
 }
 
-// PDFからテキストを抽出
+// PDFからテキストを抽出（高精度OCR版）
 export async function extractTextFromPDF(file: File): Promise<string> {
   try {
+    console.log('📄 PDF解析開始:', file.name, `(${(file.size / 1024 / 1024).toFixed(2)}MB)`)
+    
     const arrayBuffer = await file.arrayBuffer()
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise
     let fullText = ''
+    let textExtracted = false
 
+    console.log(`📊 PDF総ページ数: ${pdf.numPages}`)
+
+    // まずPDF内蔵テキストを抽出
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i)
       const textContent = await page.getTextContent()
       const pageText = textContent.items
         .map((item: any) => item.str)
         .join(' ')
-      fullText += pageText + '\n\n'
+      
+      if (pageText.trim().length > 10) {
+        fullText += `\n=== ページ ${i} ===\n${pageText}\n`
+        textExtracted = true
+      }
+      
+      if (i % 10 === 0) {
+        console.log(`📄 ページ ${i}/${pdf.numPages} 処理完了`)
+      }
     }
 
-    // OCRも実行してテキスト認識を補強
-    try {
+    // PDF内蔵テキストが少ない場合、高精度OCRを実行
+    if (!textExtracted || fullText.trim().length < 100) {
+      console.log('🔍 PDF内蔵テキストが不十分です。高精度OCRを実行します...')
+      
       const canvas = document.createElement('canvas')
       const context = canvas.getContext('2d')!
+      let ocrText = ''
       
-      for (let i = 1; i <= Math.min(3, pdf.numPages); i++) { // 最初の3ページのみOCR
-        const page = await pdf.getPage(i)
-        const viewport = page.getViewport({ scale: 2.0 })
-        canvas.width = viewport.width
-        canvas.height = viewport.height
-        
-        await page.render({
-          canvasContext: context,
-          viewport: viewport
-        }).promise
+      // 全ページをOCR処理（最大20ページまで）
+      const maxPages = Math.min(pdf.numPages, 20)
+      for (let i = 1; i <= maxPages; i++) {
+        try {
+          const page = await pdf.getPage(i)
+          const viewport = page.getViewport({ scale: 3.0 }) // 高解像度
+          canvas.width = viewport.width
+          canvas.height = viewport.height
+          
+          context.fillStyle = 'white'
+          context.fillRect(0, 0, canvas.width, canvas.height)
+          
+          await page.render({
+            canvasContext: context,
+            viewport: viewport
+          }).promise
 
-        const { data: { text } } = await Tesseract.recognize(canvas, 'jpn+eng', {
-          logger: () => {} // ログを無効化
-        })
-        
-        if (text.trim()) {
-          fullText += '\n--- OCR補強テキスト ---\n' + text
+          console.log(`🔍 ページ ${i} OCR処理中...`)
+
+          const { data: { text, confidence } } = await Tesseract.recognize(canvas, 'jpn+eng', {
+            logger: (m) => {
+              if (m.status === 'recognizing text') {
+                console.log(`OCR進捗: ${Math.round(m.progress * 100)}%`)
+              }
+            }
+          })
+          
+          if (text.trim() && confidence > 30) {
+            ocrText += `\n=== ページ ${i} (OCR) ===\n${text}\n`
+            console.log(`✅ ページ ${i} OCR完了 (信頼度: ${confidence.toFixed(1)}%)`)
+          } else {
+            console.log(`⚠️ ページ ${i} OCR信頼度低: ${confidence.toFixed(1)}%`)
+          }
+          
+        } catch (pageError) {
+          console.error(`❌ ページ ${i} OCR処理エラー:`, pageError)
         }
       }
-    } catch (ocrError) {
-      console.warn('OCR補強に失敗:', ocrError)
+      
+      if (ocrText.trim()) {
+        fullText = ocrText
+        console.log('✅ OCRテキスト抽出完了')
+      }
+    } else {
+      console.log('✅ PDF内蔵テキスト抽出完了')
     }
 
+    if (!fullText.trim()) {
+      throw new Error('PDFからテキストを抽出できませんでした。ファイルが画像のみの場合があります。')
+    }
+
+    console.log(`📊 抽出テキスト長: ${fullText.length}文字`)
     return fullText
+
   } catch (error) {
-    console.error('PDF解析エラー:', error)
-    throw new Error('PDFファイルの解析に失敗しました')
+    console.error('❌ PDF解析エラー:', error)
+    throw new Error(`PDFファイルの解析に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 }
 
@@ -121,67 +178,172 @@ function convertChoiceToNumber(choice: string): number {
   return choiceMap[choice] || 1
 }
 
-// テキストから問題を抽出
+// テキストから問題を抽出（改善版）
 export function parseQuestionsFromText(text: string): ExtractedQuestion[] {
-  console.log('=== 問題抽出開始 ===')
+  console.log('🔍 問題抽出開始...')
   const questions: ExtractedQuestion[] = []
   
-  // テキストをクリーンアップ
-  const cleanText = text
-    .replace(/\s+/g, ' ') // 複数の空白を1つに
-    .replace(/\n+/g, '\n') // 複数の改行を1つに
+  // テキストを正規化
+  const normalizedText = text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\u3000\s]+/g, ' ') // 全角・半角スペースを統一
+    .replace(/[．.。]/g, '.') // 句読点を統一
+    .replace(/[（(]/g, '(')
+    .replace(/[）)]/g, ')')
+    .replace(/[：:]/g, ':')
     .trim()
 
-  debugPDFText(cleanText)
-
-  // 複数のパターンで問題を検索
-  for (const pattern of QUESTION_PATTERNS) {
-    const matches = Array.from(cleanText.matchAll(new RegExp(pattern.source, pattern.flags)))
+  console.log('📊 正規化済みテキスト長:', normalizedText.length)
+  
+  // ページ区切りで分割して処理
+  const pages = normalizedText.split(/=== ページ \d+ ===/).filter(page => page.trim())
+  
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+    const pageText = pages[pageIndex]
+    console.log(`📄 ページ ${pageIndex + 1} 処理中... (${pageText.length}文字)`)
     
-    for (const match of matches) {
-      const questionText = match[1] || match[2] || match[0]
-      if (!questionText || questionText.length < 10) continue
-
-      // この問題の選択肢を検索
-      const choices = extractChoicesAfterQuestion(cleanText, match.index || 0)
-      
-      if (choices.length >= 2) {
-        questions.push({
-          questionText: questionText.trim(),
-          choices: choices,
-          difficulty: estimateDifficulty(questionText)
-        })
-        
-        console.log(`問題発見: ${questionText.substring(0, 50)}...`)
-        console.log(`選択肢: ${choices.join(', ')}`)
+    // 問題ブロックを抽出
+    const questionBlocks = extractQuestionBlocks(pageText)
+    
+    for (const block of questionBlocks) {
+      const question = parseQuestionBlock(block)
+      if (question && question.choices.length >= 2) {
+        questions.push(question)
+        console.log(`✅ 問題 ${questions.length}: ${question.questionText.substring(0, 50)}...`)
+        console.log(`   選択肢数: ${question.choices.length}`)
       }
     }
   }
 
-  console.log(`=== 抽出完了: ${questions.length}問 ===`)
+  console.log(`🎯 抽出完了: ${questions.length}問`)
   return questions
 }
 
-// 問題の後に続く選択肢を抽出
-function extractChoicesAfterQuestion(text: string, questionIndex: number): string[] {
-  const afterQuestion = text.substring(questionIndex)
-  const choices: string[] = []
-
-  for (const pattern of CHOICE_PATTERNS) {
-    const matches = Array.from(afterQuestion.matchAll(new RegExp(pattern.source, pattern.flags)))
+// 問題ブロックを抽出
+function extractQuestionBlocks(text: string): string[] {
+  const blocks: string[] = []
+  
+  // 問題番号で分割
+  const questionMarkers = [
+    /(?:問題?\s*\d+\s*[．.\)）:：]|第?\s*\d+\s*問[．.\)）:：]?)/gi,
+    /(?:^|\n)\s*\d+\s*[．.\)）:：]/gm
+  ]
+  
+  for (const pattern of questionMarkers) {
+    const matches = Array.from(text.matchAll(pattern))
     
-    for (const match of matches) {
-      const choice = match[1]?.trim()
-      if (choice && choice.length > 1 && choice.length < 200) {
-        choices.push(choice)
-        if (choices.length >= 5) break
+    if (matches.length >= 2) {
+      for (let i = 0; i < matches.length - 1; i++) {
+        const start = matches[i].index || 0
+        const end = matches[i + 1].index || text.length
+        const block = text.substring(start, end).trim()
+        
+        if (block.length > 20) {
+          blocks.push(block)
+        }
+      }
+      
+      // 最後のブロック
+      const lastMatch = matches[matches.length - 1]
+      const lastBlock = text.substring(lastMatch.index || 0).trim()
+      if (lastBlock.length > 20) {
+        blocks.push(lastBlock)
+      }
+      
+      if (blocks.length > 0) break // 最初に見つかったパターンを使用
+    }
+  }
+  
+  // 問題番号が見つからない場合は全体を1ブロックとして処理
+  if (blocks.length === 0 && text.trim().length > 50) {
+    blocks.push(text.trim())
+  }
+  
+  return blocks
+}
+
+// 問題ブロックをパース
+function parseQuestionBlock(block: string): ExtractedQuestion | null {
+  try {
+    // 問題文を抽出
+    const questionText = extractQuestionText(block)
+    if (!questionText || questionText.length < 10) {
+      return null
+    }
+    
+    // 選択肢を抽出
+    const choices = extractChoicesFromBlock(block)
+    if (choices.length < 2) {
+      return null
+    }
+    
+    return {
+      questionText: questionText.trim(),
+      choices: choices,
+      difficulty: estimateDifficulty(questionText)
+    }
+  } catch (error) {
+    console.warn('問題ブロック解析エラー:', error)
+    return null
+  }
+}
+
+// 問題文を抽出
+function extractQuestionText(block: string): string {
+  // 問題番号を除去
+  let text = block
+    .replace(/^(?:問題?\s*\d+\s*[．.\)）:：]|第?\s*\d+\s*問[．.\)）:：]?)\s*/i, '')
+    .replace(/^\d+\s*[．.\)）:：]\s*/, '')
+  
+  // 選択肢の開始位置を見つける
+  const choiceStart = findChoiceStart(text)
+  if (choiceStart > 0) {
+    text = text.substring(0, choiceStart)
+  }
+  
+  return text.trim()
+}
+
+// 選択肢の開始位置を見つける
+function findChoiceStart(text: string): number {
+  const lines = text.split('\n')
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (/^[1-5ア-オa-eA-E①-⑤]\s*[．.\)）:]/.test(line) ||
+        /^\([1-5ア-オa-eA-E①-⑤]\)/.test(line)) {
+      // この行までの文字数を計算
+      return lines.slice(0, i).join('\n').length
+    }
+  }
+  
+  return -1
+}
+
+// ブロックから選択肢を抽出
+function extractChoicesFromBlock(block: string): string[] {
+  const choices: string[] = []
+  const lines = block.split('\n')
+  
+  for (const line of lines) {
+    const trimmedLine = line.trim()
+    
+    for (const pattern of CHOICE_PATTERNS) {
+      const match = trimmedLine.match(pattern)
+      if (match) {
+        const choice = match[2] || match[1] // 選択肢テキスト
+        if (choice && choice.length > 1 && choice.length < 300) {
+          choices.push(choice.trim())
+          break
+        }
       }
     }
     
-    if (choices.length >= 2) break
+    if (choices.length >= 5) break
   }
-
-  return choices.slice(0, 5) // 最大5選択肢
+  
+  return choices
 }
 
 // テキストから解答を抽出

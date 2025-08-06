@@ -75,3 +75,68 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+export async function GET(request: NextRequest) {
+  try {
+    const adminClient = createServerClient()
+    const { searchParams } = new URL(request.url)
+    
+    const categoryId = searchParams.get('categoryId')
+    const limit = parseInt(searchParams.get('limit') || '10')
+
+    console.log('Quiz questions GET API:', { categoryId, limit })
+
+    if (!categoryId) {
+      return NextResponse.json(
+        { error: 'Category ID is required' },
+        { status: 400 }
+      )
+    }
+
+    // カテゴリーから問題セット経由で取得
+    const { data: questionSets, error: setsError } = await adminClient
+      .from('question_sets')
+      .select('id')
+      .eq('category_id', parseInt(categoryId))
+
+    if (setsError) {
+      console.error('Question sets error:', setsError)
+      throw setsError
+    }
+
+    const questionSetIds = questionSets?.map(qs => qs.id) || []
+    
+    if (questionSetIds.length === 0) {
+      return NextResponse.json({
+        success: true,
+        data: []
+      })
+    }
+
+    const { data: questions, error } = await adminClient
+      .from('questions')
+      .select('*')
+      .in('question_set_id', questionSetIds)
+      .order('question_number', { ascending: true })
+      .limit(limit)
+
+    if (error) {
+      console.error('Questions error:', error)
+      throw error
+    }
+
+    console.log('取得した問題数:', questions?.length || 0)
+
+    return NextResponse.json({
+      success: true,
+      data: questions || []
+    })
+
+  } catch (error: any) {
+    console.error('Quiz questions GET API error:', error)
+    return NextResponse.json(
+      { error: error.message || 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
