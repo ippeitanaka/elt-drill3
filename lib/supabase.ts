@@ -11,9 +11,6 @@ let supabaseInstance: ReturnType<typeof createClient> | null = null;
 export const getSupabaseClient = () => {
   if (!supabaseInstance) {
     supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
-      db: {
-        schema: 'public'
-      },
       realtime: {
         params: {
           eventsPerSecond: 10
@@ -33,5 +30,5 @@ export const createServerClient = () => {
   return createClient(supabaseUrl, serviceRoleKey)
 }
 
-// supabaseのエクスポート
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// 統一されたエクスポート
+export const supabase = getSupabaseClient();

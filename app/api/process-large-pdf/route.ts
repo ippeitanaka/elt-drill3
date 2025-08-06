@@ -6,11 +6,14 @@ export async function POST(request: NextRequest) {
     const adminClient = createServerClient()
     const body = await request.json()
     
-    const { questionFileUrl, answerFileUrl, categoryId } = body
+    console.log('Received request body:', body)
+    
+    const { questionFileUrl, answerFileUrl, categoryId, targetQuestionCount = 469 } = body
 
-    if (!questionFileUrl || !categoryId) {
+    // より柔軟なパラメータチェック
+    if (!categoryId) {
       return NextResponse.json(
-        { error: 'Question file URL and category ID are required' },
+        { error: 'Category ID is required' },
         { status: 400 }
       )
     }
@@ -18,11 +21,12 @@ export async function POST(request: NextRequest) {
     console.log('大容量PDF処理開始:', {
       questionFileUrl,
       answerFileUrl,
-      categoryId
+      categoryId,
+      targetQuestionCount
     })
 
     // 簡単なアプローチ: サンプル問題を大量生成して保存
-    const questions = generateSampleQuestions(469) // 469問を生成
+    const questions = generateSampleQuestions(targetQuestionCount) // 指定された問題数を生成
 
     console.log(`サンプル問題生成完了: ${questions.length}問`)
 

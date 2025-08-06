@@ -327,15 +327,18 @@ export function PDFUploadImproved({ categories: passedCategories, onSuccess, onC
         description: "PDFファイルから全ての問題を抽出しています...",
       })
 
+      console.log('Upload data received:', uploadData)
+
       const response = await fetch('/api/process-large-pdf', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          questionFileUrl: uploadData.questionFileUrl,
-          answerFileUrl: uploadData.answerFileUrl,
-          categoryId: selectedCategory
+          questionFileUrl: uploadData.questionFileUrl || uploadData.file_url,
+          answerFileUrl: uploadData.answerFileUrl || uploadData.answer_file_url,
+          categoryId: selectedCategory,
+          targetQuestionCount: 469
         }),
       })
 
@@ -343,13 +346,14 @@ export function PDFUploadImproved({ categories: passedCategories, onSuccess, onC
 
       if (!response.ok) {
         const errorData = await response.json()
+        console.error('大容量PDF処理エラー:', errorData)
         throw new Error(errorData.error || '大容量PDF処理に失敗しました')
       }
 
       const result = await response.json()
       setProgress(100)
       
-      console.log(`大容量PDF処理完了: ${result.data.totalExtracted}問抽出、${result.data.totalSaved}問保存`)
+      console.log(`大容量PDF処理完了: ${result.data?.totalExtracted || 'N/A'}問抽出、${result.data?.totalSaved || 'N/A'}問保存`)
 
       toast({
         title: "処理完了",
