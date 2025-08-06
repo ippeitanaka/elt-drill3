@@ -99,12 +99,42 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
         return
       }
 
-      // データをシャッフルして、choicesを作成
-      const processedQuestions = questionsData.map((q: any) => ({
-        ...q,
-        choices: [q.option_a, q.option_b, q.option_c, q.option_d, q.option_e].filter(Boolean),
-        correct_answer_index: ['a', 'b', 'c', 'd', 'e'].indexOf(q.correct_answer.toLowerCase())
-      }))
+      // データをシャッフルして、choicesを作成（新しいデータ形式対応）
+      const processedQuestions = questionsData.map((q: any) => {
+        let choices = []
+        let correctAnswerIndex = 0
+        
+        // 新しい形式（options と correct_answers が JSON）の場合
+        if (q.options && q.correct_answers) {
+          try {
+            const options = typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+            const correctAnswers = typeof q.correct_answers === 'string' ? JSON.parse(q.correct_answers) : q.correct_answers
+            
+            choices = [options.a, options.b, options.c, options.d, options.e].filter(Boolean)
+            correctAnswerIndex = ['a', 'b', 'c', 'd', 'e'].indexOf(correctAnswers[0]?.toLowerCase() || 'a')
+          } catch (error) {
+            console.warn('JSON解析エラー:', error)
+            choices = ['選択肢が読み込めません']
+            correctAnswerIndex = 0
+          }
+        }
+        // 古い形式（option_a-e と correct_answer）の場合
+        else if (q.option_a || q.option_b || q.option_c || q.option_d || q.option_e) {
+          choices = [q.option_a, q.option_b, q.option_c, q.option_d, q.option_e].filter(Boolean)
+          correctAnswerIndex = ['a', 'b', 'c', 'd', 'e'].indexOf(q.correct_answer?.toLowerCase() || 'a')
+        }
+        // データが不完全な場合のフォールバック
+        else {
+          choices = ['データが不完全です']
+          correctAnswerIndex = 0
+        }
+        
+        return {
+          ...q,
+          choices,
+          correct_answer_index: Math.max(0, correctAnswerIndex) // 負の値を防ぐ
+        }
+      })
       
       // 重複を除去（IDベース）
       const uniqueQuestions = processedQuestions.filter((question: any, index: number, self: any[]) => 

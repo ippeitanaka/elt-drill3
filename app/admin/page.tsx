@@ -5,16 +5,16 @@ import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Brain, Upload, Settings, Users, Database, BarChart, Sparkles, Plus, Edit, Wifi } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseClient } from '@/lib/supabase'
 import { toast } from '@/hooks/use-toast'
 import { PDFUploadImproved } from '@/components/admin/pdf-upload-improved'
-import { CategoryManager } from '@/components/admin/category-manager'
+import SimpleCategoryManager from '@/components/admin/simple-category-manager'
 import { SupabaseConnectionTest } from '@/components/admin/supabase-connection-test'
 import { DatabaseSchemaCheck } from '@/components/admin/database-schema-check'
 import type { Category } from '@/lib/types'
 
 export default function AdminPage() {
+  const supabase = getSupabaseClient()
   const [categories, setCategories] = useState<Category[]>([])
   const [showUpload, setShowUpload] = useState(false)
   const [showCategoryManager, setShowCategoryManager] = useState(false)
@@ -27,27 +27,28 @@ export default function AdminPage() {
     categoriesCount: 0
   })
 
-  // Service Role Client (カテゴリーマネージャーと同じクライアントを使用)
-  const getSupabaseClient = () => {
-    const supabaseUrl = "https://hfanhwznppxngpbjkgno.supabase.co"
-    const serviceRoleKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmYW5od3pucHB4bmdwYmprZ25vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MjMwNzQwMSwiZXhwIjoyMDY3ODgzNDAxfQ.A5xIaYlRhjWRv5jT-QdCUB8ThV2u_ufXXnV_o6dZ-a4"
-    
-    return createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-        detectSessionInUrl: false
-      },
-      db: {
-        schema: 'public'
-      },
-      global: {
-        headers: {
-          'X-Client-Info': 'admin-service-role'
-        }
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        window.location.href = '/login' // 未認証の場合はログインページへリダイレクト
+        return
       }
-    })
-  }
+
+      const { data: profile } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (profile?.role !== 'admin') {
+        window.location.href = '/' // 管理者でない場合はホームページへリダイレクト
+      }
+    }
+
+    // 認証チェックを一時的に無効化（開発用）
+    // checkAuth()
+  }, [supabase])
 
   useEffect(() => {
     loadAdminData()
@@ -56,10 +57,8 @@ export default function AdminPage() {
   const loadAdminData = async () => {
     try {
       console.log('管理画面でカテゴリー取得開始')
-      const client = getSupabaseClient()
       
-      // カテゴリを取得 (Service Role Clientを使用)
-      const { data: categoriesData, error: categoriesError } = await client
+      const { data: categoriesData, error: categoriesError } = await supabase
         .from('categories')
         .select('*')
         .order('name')
@@ -69,42 +68,37 @@ export default function AdminPage() {
         throw categoriesError
       }
 
-      console.log('管理画面で取得されたカテゴリー:', categoriesData)
-
-      // カテゴリーデータをフォーマット
       const formattedCategories: Category[] = categoriesData?.map(item => ({
-        id: item.id,
-        name: item.name,
-        icon: item.icon || "📚",
-        color: item.color || "bg-blue-500",
-        description: item.description || "",
-        total_questions: 0,
-        created_at: item.created_at,
-        updated_at: item.created_at
+        id: String(item.id),
+        name: String(item.name),
+        icon: String(item.icon || '📚'), // デフォルトアイコン
+        color: String(item.color || 'red'), // デフォルト色
+        description: String(item.description || `${item.name}に関する問題`), // デフォルト説明
+        total_questions: Number(item.total_questions || 0), // デフォルト0
+        created_at: String(item.created_at),
+        updated_at: String(item.updated_at || item.created_at), // created_atをフォールバック
       })) || []
 
       setCategories(formattedCategories)
-      console.log('管理画面でカテゴリー状態更新:', formattedCategories)
 
-      // 統計データを取得（存在しないテーブルはスキップ）
-      const questionsResult = await client.from('questions').select('id', { count: 'exact' })
-      
-      // profilesとquiz_sessionsテーブルは存在しない可能性があるため、エラーを無視
+      const questionsResult = await supabase.from('questions').select('id', { count: 'exact' })
       let usersCount = 0
       let quizzesCount = 0
       
       try {
-        const usersResult = await client.from('profiles').select('id', { count: 'exact' })
+        const usersResult = await supabase.from('profiles').select('id', { count: 'exact' })
         usersCount = usersResult.count || 0
       } catch (error) {
         console.log('profilesテーブルが存在しません')
       }
       
       try {
-        const quizzesResult = await client.from('quiz_sessions').select('id', { count: 'exact' })
+        // quiz_sessionsテーブルの代わりに、question_setsテーブルの数を使用
+        const quizzesResult = await supabase.from('question_sets').select('id', { count: 'exact' })
         quizzesCount = quizzesResult.count || 0
       } catch (error) {
-        console.log('quiz_sessionsテーブルが存在しません')
+        console.log('question_setsテーブルから情報を取得できませんでした')
+        quizzesCount = 0
       }
 
       setStats({
@@ -123,15 +117,16 @@ export default function AdminPage() {
       })
     }
   }
+
   return (
-    <main className="min-h-screen p-8 bg-gradient-to-b from-blue-50 to-white">
+    <main className="min-h-screen p-8 bg-gradient-to-b from-red-50 to-white">
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
-          <Link href="/" className="text-blue-600 hover:text-blue-800 mb-4 inline-block">
+          <Link href="/" className="text-red-600 hover:text-red-800 mb-4 inline-block">
             ← ホームに戻る
           </Link>
           <h1 className="text-4xl font-bold text-gray-900 mb-4">🔧 管理画面</h1>
-          <p className="text-xl text-gray-600">問題の管理と設定</p>
+          <p className="text-xl text-gray-600">救急救命士国家試験問題の管理と設定</p>
         </div>
 
         <div className="grid md:grid-cols-2 gap-6">
@@ -142,7 +137,7 @@ export default function AdminPage() {
                 PDF問題アップロード
               </CardTitle>
               <CardDescription>
-                カテゴリー別に問題PDFと解答PDFをアップロード
+                カテゴリー別に国家試験問題PDFと解答PDFをアップロード
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -151,11 +146,9 @@ export default function AdminPage() {
               </p>
               <Button 
                 onClick={() => {
-                  console.log('PDFアップロードを開く - 現在のカテゴリー:', categories)
-                  console.log('カテゴリー数:', categories.length)
                   setShowUpload(true)
                 }}
-                className="w-full bg-green-600 hover:bg-green-700"
+                className="w-full bg-red-600 hover:bg-red-700"
               >
                 <Upload className="h-4 w-4 mr-2" />
                 PDFアップロードを開く
@@ -166,30 +159,11 @@ export default function AdminPage() {
           <Card className="hover:shadow-lg transition-shadow">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                📝 手動問題作成
-              </CardTitle>
-              <CardDescription>
-                問題を手動で作成・編集
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-600 mb-4">
-                問題文と選択肢を手動で入力して作成
-              </p>
-              <button className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors">
-                問題作成エディタを開く
-              </button>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
                 <Edit className="h-5 w-5" />
                 カテゴリー管理
               </CardTitle>
               <CardDescription>
-                学習カテゴリーの追加・編集・削除
+                学習分野（基礎医学、救急医学等）の追加・編集・削除
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -198,7 +172,7 @@ export default function AdminPage() {
               </p>
               <Button 
                 onClick={() => setShowCategoryManager(true)}
-                className="w-full bg-green-600 hover:bg-green-700"
+                className="w-full bg-orange-600 hover:bg-orange-700"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 カテゴリー管理を開く
@@ -222,7 +196,7 @@ export default function AdminPage() {
               </p>
               <Button 
                 onClick={() => setShowConnectionTest(true)}
-                className="w-full bg-indigo-600 hover:bg-indigo-700"
+                className="w-full bg-green-600 hover:bg-green-700"
               >
                 <Database className="h-4 w-4 mr-2" />
                 接続テストを開く
@@ -246,49 +220,11 @@ export default function AdminPage() {
               </p>
               <Button 
                 onClick={() => setShowSchemaCheck(true)}
-                className="w-full bg-teal-600 hover:bg-teal-700"
+                className="w-full bg-blue-600 hover:bg-blue-700"
               >
                 <Database className="h-4 w-4 mr-2" />
                 スキーマをチェック
               </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                👥 ユーザー管理
-              </CardTitle>
-              <CardDescription>
-                ユーザーアカウントの管理
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-600 mb-4">
-                ユーザーの登録状況や成績を確認
-              </p>
-              <button className="w-full bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700 transition-colors">
-                ユーザー一覧を表示
-              </button>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                📊 統計・分析
-              </CardTitle>
-              <CardDescription>
-                問題の正答率や使用状況
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-600 mb-4">
-                各問題の統計データと分析結果
-              </p>
-              <button className="w-full bg-orange-600 text-white py-2 px-4 rounded-md hover:bg-orange-700 transition-colors">
-                統計データを表示
-              </button>
             </CardContent>
           </Card>
         </div>
@@ -298,18 +234,22 @@ export default function AdminPage() {
             <CardTitle>システム情報</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid md:grid-cols-3 gap-4 text-center">
+            <div className="grid md:grid-cols-4 gap-4 text-center">
               <div>
-                <p className="text-2xl font-bold text-blue-600">156</p>
+                <p className="text-2xl font-bold text-red-600">{stats.totalQuestions}</p>
                 <p className="text-sm text-gray-600">登録問題数</p>
               </div>
               <div>
-                <p className="text-2xl font-bold text-green-600">89</p>
-                <p className="text-sm text-gray-600">登録ユーザー数</p>
+                <p className="text-2xl font-bold text-orange-600">{stats.totalUsers}</p>
+                <p className="text-sm text-gray-600">学習者数</p>
               </div>
               <div>
-                <p className="text-2xl font-bold text-purple-600">1,247</p>
-                <p className="text-sm text-gray-600">総回答数</p>
+                <p className="text-2xl font-bold text-yellow-600">{stats.totalQuizzes}</p>
+                <p className="text-sm text-gray-600">総受験回数</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-green-600">{stats.categoriesCount}</p>
+                <p className="text-sm text-gray-600">カテゴリー数</p>
               </div>
             </div>
           </CardContent>
@@ -320,7 +260,7 @@ export default function AdminPage() {
       {showUpload && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <PDFUploadImproved
-            categories={categories}
+            categories={[]} // 空配列に変更（コンポーネント内で取得）
             onClose={() => setShowUpload(false)}
             onSuccess={() => {
               setShowUpload(false)
@@ -343,7 +283,7 @@ export default function AdminPage() {
               </Button>
             </div>
             <div className="p-4">
-              <CategoryManager onCategoryChange={() => loadAdminData()} />
+              <SimpleCategoryManager />
             </div>
           </div>
         </div>

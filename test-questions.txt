@@ -1,0 +1,15 @@
+PDF test document
+
+This is a sample PDF for testing the upload functionality.
+
+Question 1: What is the normal heart rate for adults?
+A) 40-60 bpm
+B) 60-100 bpm  
+C) 100-120 bpm
+D) 120-150 bpm
+
+Question 2: What is the correct compression depth for adult CPR?
+A) 3-4 cm
+B) 5-6 cm
+C) 7-8 cm  
+D) 9-10 cm

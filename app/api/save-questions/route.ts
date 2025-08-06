@@ -15,40 +15,65 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 問題セットを作成
-    const { data: questionSet, error: setError } = await adminClient
+    // 既存の問題セットを使用するか、新規作成を試行
+    let questionSetId;
+    
+    // まず既存の問題セットを確認
+    const { data: existingSets } = await adminClient
       .from("question_sets")
-      .insert({
-        category_id: categoryId,
-        title: title || `アップロード - ${new Date().toLocaleDateString("ja-JP")}`,
-        description: description || `問題セット（${questions.length}問）`,
-        order_index: 1,
-      })
-      .select()
-      .single()
+      .select('id')
+      .eq('category_id', categoryId)
+      .limit(1)
 
-    if (setError) {
-      console.error("Question set creation error:", setError)
-      return NextResponse.json(
-        { error: `Question set creation error: ${setError.message}` },
-        { status: 500 }
-      )
+    if (existingSets && existingSets.length > 0) {
+      // 既存のセットを使用
+      questionSetId = existingSets[0].id
+      console.log('Using existing question set:', questionSetId)
+    } else {
+      // 新規作成を試行（name フィールドを含む）
+      const { data: newSet, error: setError } = await adminClient
+        .from("question_sets")
+        .insert({
+          category_id: categoryId,
+          name: title || `アップロード - ${new Date().toLocaleDateString("ja-JP")}`,
+        })
+        .select()
+        .single()
+
+      if (setError) {
+        console.error("Question set creation error:", setError)
+        return NextResponse.json(
+          { error: `Question set creation error: ${setError.message}` },
+          { status: 500 }
+        )
+      }
+      
+      questionSetId = newSet.id
+      console.log('Created new question set:', questionSetId)
     }
 
-    // 問題を挿入
+    // 問題を挿入（実際のスキーマに合わせて）
     const questionsToInsert = questions.map((q: any, index: number) => {
       const choices = q.choices || []
+      
+      // 選択肢をJSON形式で保存
+      const options = {
+        a: choices[0] || q.option_a || "選択肢1",
+        b: choices[1] || q.option_b || "選択肢2",
+        c: choices[2] || q.option_c || "選択肢3",
+        d: choices[3] || q.option_d || "選択肢4",
+        e: choices[4] || q.option_e || "選択肢5"
+      }
+      
+      // 正解情報を配列形式で保存
+      const correctAnswers = [q.correct_answer || "a"]
+      
       return {
-        question_set_id: questionSet.id,
+        question_set_id: questionSetId,
         question_text: q.question_text,
-        option_a: choices[0] || q.option_a || "選択肢1",
-        option_b: choices[1] || q.option_b || "選択肢2", 
-        option_c: choices[2] || q.option_c || "選択肢3",
-        option_d: choices[3] || q.option_d || "選択肢4",
-        option_e: choices[4] || q.option_e || "選択肢5", // option_eを追加
-        correct_answer: q.correct_answer || "A",
-        difficulty: "medium",
-        order_index: index + 1,
+        question_number: index + 1,
+        options: JSON.stringify(options),
+        correct_answers: JSON.stringify(correctAnswers)
       }
     })
 
@@ -105,7 +130,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       data: {
-        questionSetId: questionSet.id,
+        questionSetId: questionSetId,
         questionsCount: questions.length
       },
       message: `${questions.length}問をデータベースに保存しました。`

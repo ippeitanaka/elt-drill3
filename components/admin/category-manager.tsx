@@ -38,35 +38,15 @@ export function CategoryManager({ onCategoryChange }: CategoryManagerProps) {
   const [saving, setSaving] = useState(false)
   const [useServiceRole, setUseServiceRole] = useState(true) // デフォルトでONに変更
 
-  // Service Role Client (RLSをバイパス)
-  const getSupabaseClient = () => {
-    if (useServiceRole) {
-      console.log('Service Role Client を使用')
-      const supabaseUrl = "https://hfanhwznppxngpbjkgno.supabase.co"
-      const serviceRoleKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmYW5od3pucHB4bmdwYmprZ25vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MjMwNzQwMSwiZXhwIjoyMDY3ODgzNDAxfQ.A5xIaYlRhjWRv5jT-QdCUB8ThV2u_ufXXnV_o6dZ-a4"
-      
-      return createClient(supabaseUrl, serviceRoleKey, {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-          detectSessionInUrl: false
-        },
-        db: {
-          schema: 'public'
-        },
-        global: {
-          headers: {
-            'X-Client-Info': 'admin-service-role'
-          }
-        }
-      })
-    } else {
-      console.log('通常のクライアントを使用')
-      return supabase
-    }
-  }
+'use client'
 
-  const iconOptions = ["📚", "📝", "📖", "🎧", "✏️", "🗣️", "🔤", "🎯", "⭐", "🏆"]
+import { useState, useEffect } from 'react'
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Plus, Edit2, Trash2, Check, X } from 'lucide-react'
+import { useToast } from "@/hooks/use-toast"  const iconOptions = ["📚", "📝", "📖", "🎧", "✏️", "🗣️", "🔤", "🎯", "⭐", "🏆"]
   const colorOptions = [
     { name: "青", value: "bg-blue-500" },
     { name: "緑", value: "bg-green-500" },

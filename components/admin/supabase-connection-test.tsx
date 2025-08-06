@@ -111,86 +111,41 @@ export function SupabaseConnectionTest() {
       }
     }))
 
-    let testCategoryId: string | null = null
-
     try {
-      // 1. READ テスト
-      console.log('READ テスト開始')
-      const { data: readData, error: readError } = await supabase
-        .from('categories')
-        .select('*')
-        .limit(5)
-
-      setStatus(prev => ({
-        ...prev,
-        crudTest: {
-          ...prev.crudTest,
-          read: !readError,
-          readError: readError?.message || null
+      const response = await fetch('/api/test/database', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
         }
-      }))
-
-      console.log('READ テスト結果:', { success: !readError, data: readData, error: readError })
-
-      // 2. WRITE テスト
-      console.log('WRITE テスト開始')
-      const testCategory = {
-        name: 'テストカテゴリー_' + Date.now(),
-        description: 'CRUD テスト用のカテゴリーです',
-        icon: '🧪',
-        color: 'bg-orange-500'
-      }
-
-      const { data: writeData, error: writeError } = await supabase
-        .from('categories')
-        .insert(testCategory)
-        .select()
-
-      const writeSuccess = !writeError && writeData && writeData.length > 0
-      if (writeSuccess) {
-        testCategoryId = writeData[0].id
-      }
-
-      setStatus(prev => ({
-        ...prev,
-        crudTest: {
-          ...prev.crudTest,
-          write: writeSuccess,
-          writeError: writeError?.message || null
-        }
-      }))
-
-      console.log('WRITE テスト結果:', { success: writeSuccess, data: writeData, error: writeError })
-
-      // 3. DELETE テスト (作成に成功した場合のみ)
-      if (testCategoryId) {
-        console.log('DELETE テスト開始')
-        const { error: deleteError } = await supabase
-          .from('categories')
-          .delete()
-          .eq('id', testCategoryId)
-
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
         setStatus(prev => ({
           ...prev,
           crudTest: {
-            ...prev.crudTest,
-            delete: !deleteError,
-            deleteError: deleteError?.message || null
+            read: result.testResults.read.success,
+            write: result.testResults.write.success,
+            delete: result.testResults.delete.success,
+            readError: result.testResults.read.error,
+            writeError: result.testResults.write.error,
+            deleteError: result.testResults.delete.error
           }
         }))
-
-        console.log('DELETE テスト結果:', { success: !deleteError, error: deleteError })
       } else {
         setStatus(prev => ({
           ...prev,
           crudTest: {
-            ...prev.crudTest,
+            read: false,
+            write: false,
             delete: false,
-            deleteError: '作成テストが失敗したため、削除テストをスキップしました'
+            readError: result.error || 'APIテストに失敗しました',
+            writeError: result.error || 'APIテストに失敗しました',
+            deleteError: result.error || 'APIテストに失敗しました'
           }
         }))
       }
-
     } catch (error) {
       console.error('CRUD テストエラー:', error)
       const errorMessage = error instanceof Error ? error.message : '不明なエラー'
@@ -198,11 +153,11 @@ export function SupabaseConnectionTest() {
       setStatus(prev => ({
         ...prev,
         crudTest: {
-          read: prev.crudTest.read,
-          write: prev.crudTest.write || false,
+          read: false,
+          write: false,
           delete: false,
-          readError: prev.crudTest.readError,
-          writeError: prev.crudTest.writeError || errorMessage,
+          readError: errorMessage,
+          writeError: errorMessage,
           deleteError: errorMessage
         }
       }))

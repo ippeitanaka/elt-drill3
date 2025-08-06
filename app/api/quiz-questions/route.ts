@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
         .from('questions')
         .select('*')
         .in('question_set_id', selectedSets)
-        .order('order_index', { ascending: true })
+        .order('question_number', { ascending: true })
         .limit(questionCount)
 
       if (error) {
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
           .from('questions')
           .select('*')
           .in('question_set_id', questionSetIds)
-          .order('order_index', { ascending: true })
+          .order('question_number', { ascending: true })
           .limit(questionCount)
 
         if (error) {

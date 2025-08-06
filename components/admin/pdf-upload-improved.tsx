@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -9,14 +9,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Upload, CheckCircle, AlertCircle, FileText, X, Brain, Sparkles } from "lucide-react"
+import { Upload, CheckCircle, AlertCircle, FileText, X, Brain, Sparkles, RefreshCw } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "@/hooks/use-toast"
 import type { Category } from "@/lib/types"
 import { processQuizPDFs, convertToLegacyFormat, type ExtractedQuestion, type ParsedQuizData } from "@/lib/ocr"
 
 interface PDFUploadImprovedProps {
-  categories: Category[]
+  categories?: Category[] // オプショナルに変更
   onSuccess: () => void
   onClose: () => void
 }
@@ -35,7 +35,14 @@ interface ParsedAnswers {
   [questionNumber: string]: "A" | "B" | "C" | "D" | "E"
 }
 
-export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadImprovedProps) {
+interface SimpleCategory {
+  id: string
+  name: string
+  value: string
+}
+
+export function PDFUploadImproved({ categories: passedCategories, onSuccess, onClose }: PDFUploadImprovedProps) {
+  const [categories, setCategories] = useState<SimpleCategory[]>([])
   const [selectedCategory, setSelectedCategory] = useState("")
   const [questionFile, setQuestionFile] = useState<File | null>(null)
   const [answerFile, setAnswerFile] = useState<File | null>(null)
@@ -44,6 +51,72 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
   const [step, setStep] = useState<"upload" | "manual" | "complete">("upload")
   const [manualQuestions, setManualQuestions] = useState("")
   const [manualAnswers, setManualAnswers] = useState("")
+
+  // カテゴリー再読み込み関数
+  const reloadCategories = async () => {
+    try {
+      console.log('カテゴリー再読み込み開始...')
+      const response = await fetch('/api/categories-for-pdf')
+      const data = await response.json()
+      
+      console.log('カテゴリー再読み込み結果:', data)
+      
+      if (data.success) {
+        setCategories(data.categories)
+        toast({
+          title: "カテゴリー更新",
+          description: `${data.categories.length}個のカテゴリーを読み込みました`,
+        })
+      } else {
+        toast({
+          title: "カテゴリー取得エラー",
+          description: data.message || "カテゴリーを取得できませんでした",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error('カテゴリー再読み込みエラー:', error)
+      toast({
+        title: "カテゴリー取得エラー", 
+        description: "カテゴリーの読み込みに失敗しました",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // コンポーネント内でカテゴリーを直接取得
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        console.log('カテゴリー取得開始...')
+        const response = await fetch('/api/categories-for-pdf')
+        const data = await response.json()
+        
+        console.log('カテゴリー取得結果:', data)
+        
+        if (data.success) {
+          setCategories(data.categories)
+          console.log('カテゴリー設定完了:', data.categories)
+        } else {
+          console.error('カテゴリー取得失敗:', data)
+          toast({
+            title: "カテゴリー取得エラー",
+            description: data.message || "カテゴリーを取得できませんでした",
+            variant: "destructive",
+          })
+        }
+      } catch (error) {
+        console.error('カテゴリー取得エラー:', error)
+        toast({
+          title: "カテゴリー取得エラー", 
+          description: "カテゴリーの読み込みに失敗しました",
+          variant: "destructive",
+        })
+      }
+    }
+
+    loadCategories()
+  }, [])
 
   // ファイル名をサニタイズする関数
   const sanitizeFileName = (fileName: string): string => {
@@ -161,6 +234,15 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
   }
 
   const handleFileUpload = async () => {
+    if (categories.length === 0) {
+      toast({
+        title: "カテゴリーがありません",
+        description: "カテゴリーを作成してから再度お試しください。",
+        variant: "destructive",
+      })
+      return
+    }
+
     if (!selectedCategory || !questionFile) {
       toast({
         title: "必要な情報が不足しています",
@@ -218,10 +300,12 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
 
       toast({
         title: "ファイルアップロード完了",
-        description: `${answerFile ? "問題ファイルと解答ファイル" : "問題ファイル"}が正常にアップロードされました。`,
+        description: `${answerFile ? "問題ファイルと解答ファイル" : "問題ファイル"}が正常にアップロードされました。大容量PDF処理を開始します...`,
       })
 
-      setStep("manual")
+      // 大容量PDF処理APIを呼び出し
+      await handleLargePDFProcessing(result.data)
+
     } catch (error: any) {
       console.error("Upload process error:", error)
       toast({
@@ -234,11 +318,73 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
     }
   }
 
+  // 大容量PDF処理を行う関数
+  const handleLargePDFProcessing = async (uploadData: any) => {
+    try {
+      setProgress(20)
+      toast({
+        title: "大容量PDF処理開始",
+        description: "PDFファイルから全ての問題を抽出しています...",
+      })
+
+      const response = await fetch('/api/process-large-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          questionFileUrl: uploadData.questionFileUrl,
+          answerFileUrl: uploadData.answerFileUrl,
+          categoryId: selectedCategory
+        }),
+      })
+
+      setProgress(90)
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '大容量PDF処理に失敗しました')
+      }
+
+      const result = await response.json()
+      setProgress(100)
+      
+      console.log(`大容量PDF処理完了: ${result.data.totalExtracted}問抽出、${result.data.totalSaved}問保存`)
+
+      toast({
+        title: "処理完了",
+        description: result.message,
+      })
+
+      onSuccess()
+      
+    } catch (error: any) {
+      console.error("大容量PDF処理エラー:", error)
+      toast({
+        title: "大容量PDF処理エラー",
+        description: error.message,
+        variant: "destructive",
+      })
+      
+      // エラーの場合はマニュアル入力画面に移行
+      setStep("manual")
+    }
+  }
+
   const handleManualSave = async () => {
+    if (categories.length === 0) {
+      toast({
+        title: "カテゴリーがありません",
+        description: "カテゴリーを作成してから再度お試しください。",
+        variant: "destructive",
+      })
+      return
+    }
+
     if (!selectedCategory || !manualQuestions.trim()) {
       toast({
         title: "データが不足しています",
-        description: "問題データを入力してください。",
+        description: "カテゴリーと問題データを入力してください。",
         variant: "destructive",
       })
       return
@@ -494,10 +640,27 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
         )}
 
         <div className="space-y-2">
-          <Label>カテゴリー *</Label>
-          <Select value={selectedCategory} onValueChange={setSelectedCategory} disabled={isProcessing}>
+          <div className="flex items-center justify-between">
+            <Label>カテゴリー *</Label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={reloadCategories}
+              disabled={isProcessing}
+            >
+              <RefreshCw className="w-4 h-4 mr-1" />
+              更新
+            </Button>
+          </div>
+          {categories.length === 0 && (
+            <div className="text-sm text-gray-500 mb-2">
+              カテゴリーを読み込み中... ({categories.length}個)
+            </div>
+          )}
+          <Select value={selectedCategory} onValueChange={setSelectedCategory} disabled={isProcessing || categories.length === 0}>
             <SelectTrigger>
-              <SelectValue placeholder="カテゴリーを選択" />
+              <SelectValue placeholder={categories.length > 0 ? "カテゴリーを選択" : "カテゴリーがありません"} />
             </SelectTrigger>
             <SelectContent>
               {categories.map((category) => (
@@ -507,6 +670,11 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
               ))}
             </SelectContent>
           </Select>
+          {categories.length > 0 && (
+            <div className="text-xs text-gray-500">
+              {categories.length}個のカテゴリーが利用可能
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -548,10 +716,10 @@ export function PDFUploadImproved({ categories, onSuccess, onClose }: PDFUploadI
 
         <Button
           onClick={handleFileUpload}
-          disabled={!selectedCategory || !questionFile || isProcessing}
+          disabled={categories.length === 0 || !selectedCategory || !questionFile || isProcessing}
           className="w-full"
         >
-          {isProcessing ? "アップロード中..." : "ファイルをアップロード"}
+          {isProcessing ? "アップロード中..." : categories.length === 0 ? "カテゴリーがありません" : "ファイルをアップロード"}
         </Button>
 
         <div className="border-t pt-4">
