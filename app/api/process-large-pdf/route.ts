@@ -136,14 +136,24 @@ export async function POST(request: NextRequest) {
           .select()
 
         if (insertError) {
-          console.error(`Batch ${Math.floor(i / batchSize) + 1} insert error:`, insertError)
+          console.error(`❌ Batch ${Math.floor(i / batchSize) + 1} insert error:`, {
+            error: insertError,
+            batchStart: i,
+            batchEnd: i + questionsToInsert.length,
+            sampleQuestion: questionsToInsert[0]
+          })
           totalErrors += questionsToInsert.length
         } else {
           savedCount += questionsToInsert.length
-          console.log(`Batch ${Math.floor(i / batchSize) + 1} saved: ${questionsToInsert.length} questions (total: ${savedCount})`)
+          console.log(`✅ Batch ${Math.floor(i / batchSize) + 1} saved: ${questionsToInsert.length} questions (total: ${savedCount})`)
+          console.log(`📊 Progress: ${savedCount}/${questions.length} (${Math.round(savedCount/questions.length*100)}%)`)
         }
       } catch (batchError) {
-        console.error(`Batch ${Math.floor(i / batchSize) + 1} critical error:`, batchError)
+        console.error(`💥 Batch ${Math.floor(i / batchSize) + 1} critical error:`, {
+          error: batchError,
+          batchStart: i,
+          batchEnd: i + questionsToInsert.length
+        })
         totalErrors += questionsToInsert.length
       }
       
@@ -158,7 +168,14 @@ export async function POST(request: NextRequest) {
         totalExtracted: questions.length,
         totalSaved: savedCount,
         totalErrors: totalErrors,
-        extractedQuestions: questions.slice(0, 5) // 最初の5問をサンプルとして返す
+        saveRate: `${savedCount}/${questions.length}`,
+        extractedQuestions: questions.slice(0, 5), // 最初の5問をサンプルとして返す
+        debug: {
+          batchSize,
+          totalBatches: Math.ceil(questions.length / batchSize),
+          finalSavedCount: savedCount,
+          finalErrorCount: totalErrors
+        }
       },
       message: `${questions.length}問を生成し、${savedCount}問をデータベースに保存しました。${totalErrors > 0 ? `(${totalErrors}問でエラー発生)` : ''}`
     })

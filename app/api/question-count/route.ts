@@ -17,7 +17,7 @@ export async function GET() {
     const results = []
 
     for (const category of categories || []) {
-      // 問題セット数
+      // 問題セット数（すべての問題セットを取得）
       const { data: questionSets, error: setError } = await adminClient
         .from('question_sets')
         .select('id, name')
@@ -30,16 +30,25 @@ export async function GET() {
 
       const questionSetIds = questionSets?.map(qs => qs.id) || []
       
-      // 問題数
+      // デバッグ情報
+      console.log(`カテゴリー "${category.name}" (ID: ${category.id}):`, {
+        questionSets: questionSets?.length || 0,
+        questionSetIds
+      })
+
+      // 問題数（より確実な方法で取得）
       let questionCount = 0
       if (questionSetIds.length > 0) {
-        const { count, error: qError } = await adminClient
+        const { data: questionsData, error: qError } = await adminClient
           .from('questions')
-          .select('*', { count: 'exact', head: true })
+          .select('id')
           .in('question_set_id', questionSetIds)
 
-        if (!qError) {
-          questionCount = count || 0
+        if (!qError && questionsData) {
+          questionCount = questionsData.length
+          console.log(`カテゴリー "${category.name}": ${questionCount}問見つかりました`)
+        } else if (qError) {
+          console.error('Questions count error:', qError)
         }
       }
 
@@ -49,7 +58,10 @@ export async function GET() {
           name: category.name
         },
         questionSets: questionSets?.length || 0,
-        questionSetsList: questionSets || [],
+        questionSetsList: questionSets?.map(qs => ({
+          id: qs.id,
+          name: qs.name
+        })) || [],
         questions: questionCount
       })
     }
