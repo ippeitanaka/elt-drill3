@@ -73,7 +73,7 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
         body: JSON.stringify({
           selectedCategories,
           selectedSets,
-          questionCount: 20
+          questionCount: 100 // より多くの問題を取得
         }),
       })
 
