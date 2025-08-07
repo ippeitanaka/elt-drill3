@@ -63,49 +63,47 @@ export function PDFUploadNew({ categories, onSuccess, onClose }: PDFUploadNewPro
     setStep("processing")
 
     try {
-      // ファイルアップロード（Supabase Storage）
+      // ファイルアップロード（サーバーサイドAPI経由）
       setProgress(10)
       toast({
         title: "📤 ファイルアップロード中...",
         description: "PDFファイルをアップロードしています"
       })
       
-      const { createClient } = await import('@supabase/supabase-js')
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      )
-      
-      // 問題PDFアップロード
-      const questionFileName = `questions_${Date.now()}.pdf`
-      const { data: questionUpload, error: questionUploadError } = await supabase.storage
-        .from('pdfs')
-        .upload(questionFileName, questionFile)
+      // FormDataを作成してサーバーサイドAPIでアップロード
+      const formData = new FormData()
+      formData.append('questionFile', questionFile)
+      if (answerFile) {
+        formData.append('answerFile', answerFile)
+      }
+      formData.append('categoryId', selectedCategory)
+      formData.append('userId', 'admin')
 
-      if (questionUploadError) throw questionUploadError
+      const uploadResponse = await fetch('/api/upload-pdf', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const uploadResult = await uploadResponse.json()
+
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error || 'ファイルアップロードに失敗しました')
+      }
 
       setProgress(25)
       
-      // 解答PDFアップロード（任意）
-      let answerFileUrl: string | null = null
-      if (answerFile) {
-        const answerFileName = `answers_${Date.now()}.pdf`
-        const { data: answerUpload, error: answerUploadError } = await supabase.storage
-          .from('pdfs')
-          .upload(answerFileName, answerFile)
-
-        if (!answerUploadError && answerUpload) {
-          const { data: { publicUrl: answerUrl } } = supabase.storage
-            .from('pdfs')
-            .getPublicUrl(answerUpload.path)
-          answerFileUrl = answerUrl
-        }
-      }
-
+      // アップロード結果からファイルURLを取得
+      const questionUpload = uploadResult.data.uploads.find((u: any) => u.type === 'question')
+      const answerUpload = uploadResult.data.uploads.find((u: any) => u.type === 'answer')
+      
       // 問題PDFのpublic URLを取得
-      const { data: { publicUrl: questionFileUrl } } = supabase.storage
-        .from('pdfs')
-        .getPublicUrl(questionUpload.path)
+      const questionFileUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/pdfs/${questionUpload.path}`
+      
+      // 解答PDFのpublic URLを取得（任意）
+      let answerFileUrl: string | null = null
+      if (answerUpload) {
+        answerFileUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/pdfs/${answerUpload.path}`
+      }
 
       setProgress(50)
       toast({
