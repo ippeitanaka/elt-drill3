@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新しいPDFテスト</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .container { background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        input[type="file"] { margin: 10px 0; }
+        button { background: #007cba; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #005a8b; }
+        .result { background: white; padding: 15px; border-radius: 4px; margin: 10px 0; }
+        .success { border-left: 4px solid #4caf50; }
+        .error { border-left: 4px solid #f44336; }
+        pre { background: #f9f9f9; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔧 新しいPDFテスト</h1>
+    
+    <div class="container">
+        <h2>📄 PDFファイルテスト</h2>
+        <input type="file" id="pdfFile" accept=".pdf">
+        <button onclick="testNewPDFAPI()">新しいAPI</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function testNewPDFAPI() {
+            const fileInput = document.getElementById('pdfFile');
+            const resultDiv = document.getElementById('result');
+            
+            if (!fileInput.files[0]) {
+                resultDiv.innerHTML = '<div class="result error">PDFファイルを選択してください</div>';
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            console.log('🔍 テスト開始:', file.name);
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                console.log('📡 新しいAPIにリクエスト送信中...');
+                const response = await fetch('/api/test-pdf-simple', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                console.log('📡 レスポンス受信:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTPエラー: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                console.log('📋 テスト結果:', result);
+                
+                resultDiv.innerHTML = `
+                    <div class="result success">
+                        <h3>✅ テスト成功</h3>
+                        <p><strong>ファイル名:</strong> ${result.fileInfo.name}</p>
+                        <p><strong>サイズ:</strong> ${result.fileInfo.size.toLocaleString()} bytes</p>
+                        <p><strong>タイプ:</strong> ${result.fileInfo.type}</p>
+                        <p><strong>最終更新:</strong> ${new Date(result.fileInfo.lastModified).toLocaleString('ja-JP')}</p>
+                        <p><strong>メッセージ:</strong> ${result.message}</p>
+                        <p><strong>タイムスタンプ:</strong> ${result.timestamp}</p>
+                        <pre>${JSON.stringify(result, null, 2)}</pre>
+                    </div>
+                `;
+                
+            } catch (error) {
+                console.error('テストエラー:', error);
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h3>❌ テスト失敗</h3>
+                        <p><strong>エラー:</strong> ${error.message}</p>
+                        <p><strong>ファイル:</strong> ${file.name}</p>
+                        <p><strong>タイムスタンプ:</strong> ${new Date().toISOString()}</p>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
