@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>シンプルPDFテスト</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .upload-section {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .upload-section.dragover {
+            border-color: #007cba;
+            background-color: #f0f8ff;
+        }
+        input[type="file"] {
+            margin: 10px;
+        }
+        button {
+            background-color: #007cba;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #005a8b;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            background-color: #e8f5e8;
+            color: #2e7d32;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 シンプルPDFテスト</h1>
+    
+    <div class="upload-section" id="uploadSection">
+        <h3>PDFファイルをアップロード</h3>
+        <input type="file" id="fileInput" accept=".pdf" />
+        <button onclick="testUpload()" id="testBtn">テスト実行</button>
+    </div>
+    
+    <div id="results" class="results" style="display: none;">
+        <!-- 結果がここに表示されます -->
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const testBtn = document.getElementById('testBtn');
+        const resultsDiv = document.getElementById('results');
+        
+        async function testUpload() {
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert('PDFファイルを選択してください');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            console.log('🔍 テスト開始:', file.name);
+            
+            resultsDiv.style.display = 'block';
+            resultsDiv.innerHTML = '<p>テスト中...</p>';
+            testBtn.disabled = true;
+            
+            try {
+                // シンプルデバッグAPIをテスト
+                console.log('📡 シンプルAPIテスト中...');
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                const response = await fetch('/api/simple-debug', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                console.log('📡 レスポンス受信:', response.status, response.statusText);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTPエラー: ${response.status} ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                console.log('📋 テスト結果:', result);
+                
+                if (result.success) {
+                    resultsDiv.innerHTML = `
+                        <div class="success">
+                            <h3>✅ テスト成功</h3>
+                            <ul>
+                                <li>ファイル名: ${result.fileInfo.name}</li>
+                                <li>サイズ: ${result.fileInfo.size.toLocaleString()} bytes</li>
+                                <li>タイプ: ${result.fileInfo.type}</li>
+                                <li>最終更新: ${new Date(result.fileInfo.lastModified).toLocaleString()}</li>
+                            </ul>
+                            <p>メッセージ: ${result.message}</p>
+                            <p>タイムスタンプ: ${result.timestamp}</p>
+                        </div>
+                    `;
+                } else {
+                    resultsDiv.innerHTML = `
+                        <div class="error">
+                            <h3>❌ テスト失敗</h3>
+                            <p>エラー: ${result.error}</p>
+                            <p>詳細: ${result.details || 'なし'}</p>
+                        </div>
+                    `;
+                }
+                
+            } catch (error) {
+                console.error('テストエラー:', error);
+                resultsDiv.innerHTML = `
+                    <div class="error">
+                        <h3>❌ 通信エラー</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            } finally {
+                testBtn.disabled = false;
+            }
+        }
+        
+        // ドラッグアンドドロップ機能
+        const uploadSection = document.getElementById('uploadSection');
+        
+        uploadSection.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadSection.classList.add('dragover');
+        });
+        
+        uploadSection.addEventListener('dragleave', () => {
+            uploadSection.classList.remove('dragover');
+        });
+        
+        uploadSection.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadSection.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].type === 'application/pdf') {
+                fileInput.files = files;
+            }
+        });
+    </script>
+</body>
+</html>
