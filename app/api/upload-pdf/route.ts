@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
         file_url: questionUploadData.path,
         file_type: "questions",
         file_size: questionFile.size,
-        uploaded_by: userId && userId !== 'anonymous' ? userId : null,
+        uploaded_by: null, // UUIDではなく管理者アップロードの場合はnullに設定
         is_processed: false,
       },
     ]
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
         file_url: answerUploadData.path,
         file_type: "answers",
         file_size: answerFile.size,
-        uploaded_by: userId && userId !== 'anonymous' ? userId : null,
+        uploaded_by: null, // UUIDではなく管理者アップロードの場合はnullに設定
         is_processed: false,
       })
     }
