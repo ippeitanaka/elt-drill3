@@ -60,16 +60,58 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: false,
         error: '解答PDFから十分なテキストを抽出できませんでした',
-        extractedText: answerText || '',
+        extractedTexts: {
+          question: questionText.substring(0, 500),
+          answer: answerText || ''
+        },
+        textLengths: {
+          question: questionText.length,
+          answer: answerText ? answerText.length : 0
+        },
         recommendations: [
           'より高解像度の解答PDFファイルを使用してください',
           'テキスト形式のPDFファイルに変換してください',
-          '解答が明確に記載されているPDFを使用してください'
+          '画像品質を改善してください'
         ]
       })
     }
     
-    console.log(`✅ 解答PDFテキスト抽出完了: ${answerText.length}文字`)
+    // Step 3: 問題を解析
+    console.log('🏥 医療問題解析開始...')
+    const medicalQuestionSet = parseMedicalQuestions(questionText)
+    
+    if (medicalQuestionSet.questions.length === 0) {
+      // より詳細な診断情報を提供
+      const lines = questionText.split('\n').filter(line => line.trim().length > 0)
+      const sampleLines = lines.slice(0, 20)
+      
+      return NextResponse.json({
+        success: false,
+        error: '医療問題として解析できませんでした',
+        extractedTexts: {
+          question: questionText.substring(0, 1000),
+          answer: answerText.substring(0, 500)
+        },
+        textLengths: {
+          question: questionText.length,
+          answer: answerText.length
+        },
+        diagnostics: {
+          totalLines: lines.length,
+          sampleLines: sampleLines,
+          hasNumbers: /\d+/.test(questionText),
+          hasJapanese: /[ひらがな-カタカナ一-龠]/.test(questionText),
+          hasChoiceMarkers: /[1-5a-eア-オ][\.\)）]/.test(questionText),
+          hasQuestionMarkers: /(?:問題?|Question|Q)\s*\d+/.test(questionText)
+        },
+        recommendations: [
+          '問題番号（1. 2. 3...）が明確に記載されているか確認してください',
+          '選択肢（a. b. c...または1. 2. 3...）が含まれているか確認してください',
+          'PDFが正しくスキャンされているか確認してください',
+          '手動でサンプル問題を入力して形式を確認してください'
+        ]
+      })
+    }    console.log(`✅ 解答PDFテキスト抽出完了: ${answerText.length}文字`)
     
     // Step 3: 問題を解析
     console.log('🏥 医療問題解析開始...')
@@ -98,27 +140,33 @@ export async function POST(request: NextRequest) {
     
     console.log(`🎯 医療問題解析完了: ${medicalQuizSet.questions.length}問を抽出`)
     
-    // Step 4: 解答を解析
-    console.log('📋 解答解析開始...')
+        // Step 4: 解答を解析
+    console.log('📋 解答PDF解析開始...')
     const answerSet = parseAnswerPDF(answerText)
     
     if (answerSet.totalAnswers === 0) {
       return NextResponse.json({
         success: false,
-        error: '解答PDFから解答を抽出できませんでした',
-        extractedText: answerText.substring(0, 1000) + '...',
-        textLength: answerText.length,
-        questionCount: medicalQuizSet.questions.length,
+        error: '解答PDFから答えを抽出できませんでした',
+        extractedTexts: {
+          question: questionText.substring(0, 500),
+          answer: answerText.substring(0, 500)
+        },
+        textLengths: {
+          question: questionText.length,
+          answer: answerText.length
+        },
         recommendations: [
-          '解答が「問1 答え：1」「1. a」などの形式で記載されているか確認してください',
-          '問題番号と解答が明確に対応しているか確認してください',
-          '解答PDFの画像品質を向上させてください',
-          '別の解答PDFを試してください'
+          '解答形式（1. a、2. b など）が明確に記載されているか確認してください',
+          '問題番号と対応する答えが含まれているか確認してください',
+          '解答PDFが正しくスキャンされているか確認してください'
         ]
       })
     }
     
-    console.log(`📋 解答解析完了: ${answerSet.totalAnswers}問の解答を抽出`)
+    // Step 5: 問題と解答を結合
+    console.log('� 問題と解答を結合中...')
+    const combinedQuestionSet = combineQuestionsAndAnswers(medicalQuestionSet, answerSet)
     
     // Step 5: 問題と解答を結合
     console.log('🔗 問題と解答を結合開始...')
@@ -182,7 +230,7 @@ export async function POST(request: NextRequest) {
     }
     
     // 問題セットを作成
-    const { data: questionSet, error: questionSetError } = await adminClient
+    const { data: questionSetData, error: questionSetError } = await adminClient
       .from('question_sets')
       .insert({
         category_id: parseInt(targetCategoryId!),
@@ -196,7 +244,7 @@ export async function POST(request: NextRequest) {
       throw new Error(`問題セット作成エラー: ${questionSetError.message}`)
     }
     
-    console.log(`📚 問題セット作成完了: ID ${questionSet.id}`)
+    console.log(`📚 問題セット作成完了: ID ${questionSetData.id}`)
     
     // 各問題を保存
     const savedQuestions = []
@@ -213,7 +261,7 @@ export async function POST(request: NextRequest) {
         const { data: savedQuestion, error: questionError } = await adminClient
           .from('questions')
           .insert({
-            question_set_id: questionSet.id,
+            question_set_id: questionSetData.id,
             question_number: question.questionNumber || (i + 1),
             question_text: question.questionText,
             options: options,
@@ -241,7 +289,7 @@ export async function POST(request: NextRequest) {
       const { data: questionCount } = await adminClient
         .from('questions')
         .select('id', { count: 'exact' })
-        .eq('question_set_id', questionSet.id)
+        .eq('question_set_id', questionSetData.id)
       
       if (questionCount) {
         await adminClient
@@ -263,7 +311,7 @@ export async function POST(request: NextRequest) {
         totalSaved: savedQuestions.length,
         questionsWithAnswers: questionsWithAnswers,
         categoryId: targetCategoryId,
-        questionSetId: questionSet.id,
+        questionSetId: questionSetData.id,
         questions: combinedQuizSet.questions.map((q, index) => ({
           number: q.questionNumber || (index + 1),
           text: q.questionText.substring(0, 100) + '...',

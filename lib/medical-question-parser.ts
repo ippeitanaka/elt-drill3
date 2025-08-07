@@ -70,6 +70,7 @@ export function parseMedicalQuestions(text: string): MedicalQuizSet {
   
   let currentQuestion: Partial<MedicalQuestion> | null = null
   let isCollectingChoices = false
+  let pendingQuestionNumber: number | null = null
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
@@ -82,6 +83,12 @@ export function parseMedicalQuestions(text: string): MedicalQuizSet {
         questions.push(currentQuestion as MedicalQuestion)
       }
       
+      // 問題文が空の場合（数字のみの行）、次の行を問題文として使用
+      if (questionMatch.text === '' && i + 1 < lines.length) {
+        pendingQuestionNumber = questionMatch.number
+        continue
+      }
+      
       console.log(`📋 問題${questionMatch.number}を検出: ${questionMatch.text.substring(0, 50)}...`)
       
       currentQuestion = {
@@ -90,6 +97,21 @@ export function parseMedicalQuestions(text: string): MedicalQuizSet {
         choices: {}
       }
       isCollectingChoices = true
+      pendingQuestionNumber = null
+      continue
+    }
+    
+    // 保留中の問題番号がある場合、この行を問題文とする
+    if (pendingQuestionNumber !== null && line.length > 10) {
+      console.log(`📋 問題${pendingQuestionNumber}を検出（分離形式）: ${line.substring(0, 50)}...`)
+      
+      currentQuestion = {
+        questionNumber: pendingQuestionNumber,
+        questionText: line,
+        choices: {}
+      }
+      isCollectingChoices = true
+      pendingQuestionNumber = null
       continue
     }
     
@@ -111,7 +133,7 @@ export function parseMedicalQuestions(text: string): MedicalQuizSet {
       }
       
       // 複数行にわたる問題文や選択肢を処理
-      if (line.length > 10 && !line.match(/^\d+\s*[．.\)）]/)) {
+      if (line.length > 5 && !line.match(/^\d+\s*[．.\)）]/)) {
         if (Object.keys(currentQuestion.choices!).length === 0) {
           // まだ選択肢がない場合は問題文に追加
           currentQuestion.questionText += ' ' + line
@@ -133,6 +155,12 @@ export function parseMedicalQuestions(text: string): MedicalQuizSet {
   
   console.log(`✅ 解析完了: ${questions.length}問を抽出`)
   
+  // デバッグ情報を出力
+  if (questions.length === 0) {
+    console.log('⚠️ 問題が検出されませんでした。テキストサンプル:')
+    console.log(lines.slice(0, 10).join('\n'))
+  }
+  
   return {
     questions,
     totalQuestions: questions.length,
@@ -148,10 +176,28 @@ function detectQuestionStart(line: string): { number: number, text: string } | n
     return { number: parseInt(match1[1]), text: match1[2].trim() }
   }
   
-  // パターン2: 「1.」「1)」
+  // パターン2: 「1.」「1)」（文字数制限を緩和）
   const match2 = line.match(/^(\d+)\s*[．.\)）]\s*(.+)$/)
-  if (match2 && match2[2].length > 20) { // 問題文は20文字以上
+  if (match2 && match2[2].length > 10) { // 問題文は10文字以上（緩和）
     return { number: parseInt(match2[1]), text: match2[2].trim() }
+  }
+  
+  // パターン3: 「第1問」「1問目」形式
+  const match3 = line.match(/^(?:第)?(\d+)(?:問目?|番目?)\s*[．.\)）:：]?\s*(.+)$/i)
+  if (match3) {
+    return { number: parseInt(match3[1]), text: match3[2].trim() }
+  }
+  
+  // パターン4: 「No.1」「#1」形式
+  const match4 = line.match(/^(?:No\.?|#)\s*(\d+)\s*[．.\)）:：]?\s*(.+)$/i)
+  if (match4) {
+    return { number: parseInt(match4[1]), text: match4[2].trim() }
+  }
+  
+  // パターン5: 数字のみの行（次の行が問題文の可能性）
+  const match5 = line.match(/^(\d+)\s*$/)
+  if (match5) {
+    return { number: parseInt(match5[1]), text: '' }
   }
   
   return null
@@ -183,6 +229,18 @@ function detectChoice(line: string): { key: string, text: string } | null {
   const match4 = line.match(/^\(([1-5a-eA-Eア-オ])\)\s*(.+)$/)
   if (match4) {
     return { key: match4[1], text: match4[2].trim() }
+  }
+  
+  // より柔軟な選択肢パターン（スペースなし）
+  const match5 = line.match(/^([1-5a-eA-Eア-オ])[:：.](.+)$/)
+  if (match5) {
+    return { key: match5[1], text: match5[2].trim() }
+  }
+  
+  // インデントされた選択肢
+  const match6 = line.match(/^\s+([1-5a-eA-Eア-オ])\s*[．.\)）]\s*(.+)$/)
+  if (match6) {
+    return { key: match6[1], text: match6[2].trim() }
   }
   
   return null
@@ -242,7 +300,16 @@ const ANSWER_EXTRACTION_PATTERNS = [
   /(\d+)\s*\n\s*([1-5a-eA-Eア-オ①-⑤])/g,
   
   // スペース区切り「1 a 2 b 3 c」形式
-  /(\d+)\s+([1-5a-eA-Eア-オ①-⑤])(?:\s+|$)/g
+  /(\d+)\s+([1-5a-eA-Eア-オ①-⑤])(?:\s+|$)/g,
+  
+  // 括弧形式「(1) a」「【1】 2」
+  /[\(（【](\d+)[\)）】]\s*([1-5a-eA-Eア-オ①-⑤])/g,
+  
+  // タブ区切り「1\ta」
+  /(\d+)\t+([1-5a-eA-Eア-オ①-⑤])/g,
+  
+  // ドット区切り「1...a」「1．．．2」
+  /(\d+)[．.]{2,}([1-5a-eA-Eア-オ①-⑤])/g
 ]
 
 // 解答PDFからテキストを解析
@@ -314,15 +381,31 @@ function normalizeAnswer(answer: string): string {
   // ひらがな → 数字変換
   const hiraganaMap: { [key: string]: string } = {
     'ア': '1', 'イ': '2', 'ウ': '3', 'エ': '4', 'オ': '5',
-    'あ': '1', 'い': '2', 'う': '3', 'え': '4', 'お': '5'
+    'あ': '1', 'い': '2', 'う': '3', 'え': '4', 'お': '5',
+    'ｱ': '1', 'ｲ': '2', 'ｳ': '3', 'ｴ': '4', 'ｵ': '5'
   }
   
   // 丸数字 → 数字変換
   const circleMap: { [key: string]: string } = {
-    '①': '1', '②': '2', '③': '3', '④': '4', '⑤': '5'
+    '①': '1', '②': '2', '③': '3', '④': '4', '⑤': '5',
+    '㉑': '1', '㉒': '2', '㉓': '3', '㉔': '4', '㉕': '5'
   }
   
-  return hiraganaMap[answer] || circleMap[answer] || normalized
+  // 大文字アルファベット → 小文字変換
+  const upperCaseMap: { [key: string]: string } = {
+    'A': 'a', 'B': 'b', 'C': 'c', 'D': 'd', 'E': 'e'
+  }
+  
+  // 全角数字 → 半角数字変換
+  const fullWidthMap: { [key: string]: string } = {
+    '１': '1', '２': '2', '３': '3', '４': '4', '５': '5'
+  }
+  
+  return hiraganaMap[answer] || 
+         circleMap[answer] || 
+         upperCaseMap[answer] || 
+         fullWidthMap[answer] || 
+         normalized
 }
 
 // 問題と解答を結合
