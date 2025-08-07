@@ -57,9 +57,9 @@ function CompletePDFAnalyzer({ categories, onClose }: { categories: Category[], 
         formData.append('category', '心肺停止') // デフォルトカテゴリー
       }
 
-      console.log('📤 シンプルPDF分析開始:', selectedFile.name)
+      console.log('📤 完全OCR分析開始:', selectedFile.name)
 
-      const response = await fetch('/api/debug-pdf-analysis-simple', {
+      const response = await fetch('/api/debug-pdf-analysis', {
         method: 'POST',
         body: formData
       })
@@ -69,7 +69,7 @@ function CompletePDFAnalyzer({ categories, onClose }: { categories: Category[], 
       clearInterval(progressInterval)
       setProgress(100)
       
-      console.log('📥 シンプルPDF分析結果:', data)
+      console.log('📥 完全OCR分析結果:', data)
       setResult({ success: response.ok, data, status: response.status, statusText: response.statusText })
 
     } catch (error) {
@@ -86,12 +86,12 @@ function CompletePDFAnalyzer({ categories, onClose }: { categories: Category[], 
   return (
     <div className="space-y-6">
       <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
-        <h3 className="text-lg font-medium text-blue-900 mb-2">🔬 シンプルPDF分析機能</h3>
+        <h3 className="text-lg font-medium text-blue-900 mb-2">🔬 完全OCR機能</h3>
         <p className="text-sm text-blue-700">
-          PDFファイルの基本情報を取得してAPIの動作確認を行います。OCR機能は無効化されています。
+          PDFファイルから医療系問題を自動抽出してデータベースに保存します。強化されたOCR機能により高精度な問題認識を実現します。
         </p>
         <p className="text-xs text-blue-600 mt-2">
-          <strong>使用API:</strong> /api/debug-pdf-analysis-simple
+          <strong>使用API:</strong> /api/debug-pdf-analysis
         </p>
       </div>
 

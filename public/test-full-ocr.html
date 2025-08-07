@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>完全OCR機能テスト</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .upload-section {
+            border: 2px dashed #3498db;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 20px;
+            background-color: #ecf0f1;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #bdc3c7;
+            border-radius: 5px;
+            background-color: white;
+        }
+        button {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px;
+        }
+        button:hover {
+            background-color: #c0392b;
+        }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 14px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .loading {
+            text-align: center;
+            color: #3498db;
+            font-style: italic;
+        }
+        .file-info {
+            background-color: #e8f4f8;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .api-endpoint {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: monospace;
+            border-left: 4px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 完全OCR機能テスト</h1>
+        
+        <div class="api-endpoint">
+            <strong>テスト対象API:</strong> /api/debug-pdf-analysis
+            <br><strong>機能:</strong> 完全なOCR処理 + 医療問題抽出 + データベース保存
+        </div>
+        
+        <div class="upload-section">
+            <h3>📄 PDFファイルを選択してください</h3>
+            <input type="file" id="pdfFile" accept=".pdf" />
+            <br>
+            <button onclick="testFullOCR()" id="testBtn">完全OCR分析を実行</button>
+        </div>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function testFullOCR() {
+            const fileInput = document.getElementById('pdfFile');
+            const file = fileInput.files[0];
+            const resultDiv = document.getElementById('result');
+            const testBtn = document.getElementById('testBtn');
+            
+            if (!file) {
+                resultDiv.innerHTML = '<div class="result error">PDFファイルを選択してください。</div>';
+                return;
+            }
+            
+            // ファイル情報を表示
+            const fileInfo = `
+ファイル名: ${file.name}
+サイズ: ${file.size.toLocaleString()} bytes
+タイプ: ${file.type}
+最終更新: ${new Date(file.lastModified).toLocaleString('ja-JP')}
+            `;
+            
+            resultDiv.innerHTML = `
+                <div class="file-info">
+                    <strong>📁 アップロードファイル情報:</strong>
+                    <pre>${fileInfo}</pre>
+                </div>
+                <div class="result loading">🔄 完全OCR分析を実行中...</div>
+            `;
+            
+            testBtn.disabled = true;
+            testBtn.textContent = '処理中...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('pdf', file);
+                formData.append('category', '心肺停止');
+                
+                console.log('完全OCR分析開始:', file.name);
+                
+                const response = await fetch('/api/debug-pdf-analysis', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                console.log('完全OCR分析結果:', data);
+                
+                const resultClass = response.ok ? 'success' : 'error';
+                const resultText = `
+📊 完全OCR分析結果:
+
+ステータス: ${response.status} ${response.statusText}
+レスポンスOK: ${response.ok}
+
+🔍 処理結果:
+${JSON.stringify(data, null, 2)}
+
+📅 実行時刻: ${new Date().toLocaleString('ja-JP')}
+                `;
+                
+                resultDiv.innerHTML = `
+                    <div class="file-info">
+                        <strong>📁 処理ファイル:</strong>
+                        <pre>${fileInfo}</pre>
+                    </div>
+                    <div class="result ${resultClass}">${resultText}</div>
+                `;
+                
+            } catch (error) {
+                console.error('完全OCR分析エラー:', error);
+                
+                const errorText = `
+❌ 完全OCR分析エラー:
+
+エラー詳細: ${error.message}
+エラータイプ: ${error.name}
+
+📅 エラー発生時刻: ${new Date().toLocaleString('ja-JP')}
+                `;
+                
+                resultDiv.innerHTML = `
+                    <div class="file-info">
+                        <strong>📁 処理予定ファイル:</strong>
+                        <pre>${fileInfo}</pre>
+                    </div>
+                    <div class="result error">${errorText}</div>
+                `;
+            } finally {
+                testBtn.disabled = false;
+                testBtn.textContent = '完全OCR分析を実行';
+            }
+        }
+        
+        // ファイル選択時の処理
+        document.getElementById('pdfFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                console.log('選択ファイル:', file.name, file.size, 'bytes');
+            }
+        });
+    </script>
+</body>
+</html>
