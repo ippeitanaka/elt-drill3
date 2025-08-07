@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
-import { extractTextFromPDF } from '@/lib/ocr-enhanced'
+import { advancedOCR } from '@/lib/advanced-ocr'
 import { parseMedicalQuestions, detectMedicalCategory, type MedicalQuestion } from '@/lib/medical-question-parser'
 
 export async function POST(request: NextRequest) {
@@ -23,9 +23,19 @@ export async function POST(request: NextRequest) {
     
     console.log(`📄 処理対象ファイル: ${pdfFile.name} (${pdfFile.size} bytes)`)
     
-    // Step 1: PDFからテキストを抽出
-    console.log('🔍 PDFテキスト抽出開始...')
-    const extractedText = await extractTextFromPDF(pdfFile)
+    // Step 1: PDFからテキストを抽出（高度なOCR）
+    console.log('🔍 高度なOCR処理開始...')
+    const arrayBuffer = await pdfFile.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+    
+    const ocrResult = await advancedOCR.extractTextFromPDF(buffer, {
+      language: 'jpn+eng',
+      imageQuality: 2.0,
+      preprocessImage: true
+    })
+    
+    const extractedText = ocrResult.text
+    console.log(`📝 OCR結果: ${extractedText.length}文字, 信頼度: ${ocrResult.totalConfidence.toFixed(2)}`)
     
     if (!extractedText || extractedText.trim().length < 50) {
       return NextResponse.json({
