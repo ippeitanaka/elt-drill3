@@ -5,393 +5,271 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Brain, Upload, Settings, Database, Sparkles } from 'lucide-react'
 import { getSupabaseClient } from '@/lib/supabase'
-import type { Category } from '@/lib/types'
-
-// 完全OCR機能コンポーネント
-function CompletePDFAnalyzer({ categories, onClose }: { categories: Category[], onClose: () => void }) {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [selectedCategory, setSelectedCategory] = useState<string>('')
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [result, setResult] = useState<any>(null)
-  const [progress, setProgress] = useState(0)
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file && file.type === 'application/pdf') {
-      setSelectedFile(file)
-      setResult(null)
-    } else {
-      alert('PDFファイルを選択してください')
-    }
-  }
-
-  const processPDF = async () => {
-    if (!selectedFile) {
-      alert('PDFファイルを選択してください')
-      return
-    }
-
-    setIsProcessing(true)
-    setProgress(0)
-    setResult(null)
-
-    try {
-      // プログレス更新のシミュレーション
-      const progressInterval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval)
-            return 90
-          }
-          return prev + 10
-        })
-      }, 500)
-
-      const formData = new FormData()
-      formData.append('pdf', selectedFile)
-      
-      // カテゴリーが選択されている場合は追加
-      if (selectedCategory) {
-        formData.append('category', selectedCategory)
-      } else {
-        formData.append('category', '心肺停止') // デフォルトカテゴリー
-      }
-
-      console.log('📤 シンプルPDF分析開始:', selectedFile.name)
-
-      const response = await fetch('/api/debug-pdf-analysis-simple', {
-        method: 'POST',
-        body: formData
-      })
-
-      const data = await response.json()
-      
-      clearInterval(progressInterval)
-      setProgress(100)
-      
-      console.log('📥 シンプルPDF分析結果:', data)
-      setResult({ success: response.ok, data, status: response.status, statusText: response.statusText })
-
-    } catch (error) {
-      console.error('❌ 完全OCR分析エラー:', error)
-      setResult({ 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      })
-    } finally {
-      setIsProcessing(false)
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
-        <h3 className="text-lg font-medium text-blue-900 mb-2">🔬 シンプルPDF分析機能</h3>
-        <p className="text-sm text-blue-700">
-          PDFファイルの基本情報を取得してAPIの動作確認を行います。OCR機能は無効化されています。
-        </p>
-        <p className="text-xs text-blue-600 mt-2">
-          <strong>使用API:</strong> /api/debug-pdf-analysis-simple
-        </p>
-      </div>
-
-      {/* ファイル選択 */}
-      <div className="space-y-2">
-        <label className="block text-sm font-medium">📄 PDFファイル選択</label>
-        <input
-          type="file"
-          accept=".pdf"
-          onChange={handleFileChange}
-          disabled={isProcessing}
-          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-        />
-        {selectedFile && (
-          <p className="text-sm text-green-600">
-            ✓ 選択済み: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
-          </p>
-        )}
-      </div>
-
-      {/* カテゴリー選択 */}
-      <div className="space-y-2">
-        <label className="block text-sm font-medium">📂 カテゴリー選択</label>
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          disabled={isProcessing}
-          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-        >
-          <option value="">自動検出 (デフォルト: 心肺停止)</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.name}>
-              {category.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* 処理実行ボタン */}
-      <Button
-        onClick={processPDF}
-        disabled={!selectedFile || isProcessing}
-        className="w-full bg-purple-600 hover:bg-purple-700"
-      >
-        <Sparkles className="w-4 h-4 mr-2" />
-        {isProcessing ? '完全OCR分析実行中...' : '🔬 完全OCR分析を実行'}
-      </Button>
-
-      {/* プログレスバー */}
-      {isProcessing && (
-        <div className="space-y-2">
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-purple-600 h-2 rounded-full transition-all duration-300" 
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <p className="text-sm text-center text-gray-600">
-            🔄 完全OCR分析中... {progress}%
-          </p>
-        </div>
-      )}
-
-      {/* 結果表示 */}
-      {result && (
-        <div className="space-y-4">
-          {result.success ? (
-            <div className="p-4 bg-green-50 border border-green-200 rounded-md">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <Sparkles className="h-5 w-5 text-green-400" />
-                </div>
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-green-800">
-                    ✅ 完全OCR分析成功！
-                  </h3>
-                  <p className="text-xs text-green-600 mt-1">
-                    ステータス: {result.status} {result.statusText}
-                  </p>
-                  <div className="mt-2 text-sm text-green-700">
-                    <details>
-                      <summary className="cursor-pointer text-green-800 font-medium">📋 詳細結果を表示</summary>
-                      <pre className="whitespace-pre-wrap text-xs bg-green-100 p-2 rounded max-h-96 overflow-y-auto mt-2">
-                        {JSON.stringify(result.data, null, 2)}
-                      </pre>
-                    </details>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-md">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <div className="h-5 w-5 text-red-400">❌</div>
-                </div>
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-red-800">
-                    エラーが発生しました
-                  </h3>
-                  {result.status && (
-                    <p className="text-xs text-red-600 mt-1">
-                      ステータス: {result.status} {result.statusText}
-                    </p>
-                  )}
-                  <div className="mt-2 text-sm text-red-700">
-                    <details>
-                      <summary className="cursor-pointer text-red-800 font-medium">📋 エラー詳細を表示</summary>
-                      <pre className="whitespace-pre-wrap text-xs bg-red-100 p-2 rounded max-h-96 overflow-y-auto mt-2">
-                        {result.error || JSON.stringify(result.data, null, 2)}
-                      </pre>
-                    </details>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
+import ClientSideOCR from '@/components/admin/ClientSideOCR'
+interface Category {
+  id: number
+  name: string
+  created_at: string
 }
 
-export default function AdminPageSimple() {
-  const supabase = getSupabaseClient()
+interface AdminStats {
+  totalQuestions: number
+  totalCategories: number
+  totalUsers: number
+  totalBadges: number
+}
+
+export default function AdminPage() {
   const [categories, setCategories] = useState<Category[]>([])
-  const [showPDFAnalyzer, setShowPDFAnalyzer] = useState(false)
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<AdminStats>({
     totalQuestions: 0,
+    totalCategories: 0,
     totalUsers: 0,
-    totalQuizzes: 0,
-    categoriesCount: 0
+    totalBadges: 0
   })
+  const [loading, setLoading] = useState(true)
+  const [showOCRProcessor, setShowOCRProcessor] = useState(false)
+  const [processingResult, setProcessingResult] = useState<any>(null)
+
+  // カテゴリーデータの読み込み
+  const loadAdminData = async () => {
+    try {
+      setLoading(true)
+      const supabase = getSupabaseClient()
+
+      // カテゴリーを取得
+      const { data: categoriesData, error: categoriesError } = await supabase
+        .from('categories')
+        .select('*')
+        .order('name')
+
+      if (categoriesError) {
+        console.error('カテゴリー取得エラー:', categoriesError)
+      } else {
+        setCategories((categoriesData || []) as unknown as Category[])
+      }
+
+      // 統計データを取得
+      const [questionsResult, usersResult, badgesResult] = await Promise.allSettled([
+        supabase.from('questions').select('id', { count: 'exact' }),
+        supabase.from('users').select('id', { count: 'exact' }),
+        supabase.from('badges').select('id', { count: 'exact' })
+      ])
+
+      setStats({
+        totalQuestions: questionsResult.status === 'fulfilled' ? questionsResult.value.count || 0 : 0,
+        totalCategories: categoriesData?.length || 0,
+        totalUsers: usersResult.status === 'fulfilled' ? usersResult.value.count || 0 : 0,
+        totalBadges: badgesResult.status === 'fulfilled' ? badgesResult.value.count || 0 : 0
+      })
+
+    } catch (error) {
+      console.error('データ読み込みエラー:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     loadAdminData()
   }, [])
 
-  const loadAdminData = async () => {
-    try {
-      console.log('🔄 管理画面でカテゴリー取得開始')
-      
-      // APIからカテゴリーを取得
-      const response = await fetch('/api/debug-categories')
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`)
-      }
-      
-      const categoryResult = await response.json()
-      console.log('📊 カテゴリーAPI結果:', categoryResult)
-      
-      if (!categoryResult.success) {
-        throw new Error(categoryResult.error || 'カテゴリー取得に失敗しました')
-      }
-      
-      const categoriesData = categoryResult.data || []
-      console.log('📊 生データ確認:', categoriesData)
+  const handleProcessingComplete = (result: any) => {
+    setProcessingResult(result)
+    setShowOCRProcessor(false)
+    loadAdminData() // データを再読み込み
+  }
 
-      const formattedCategories: Category[] = categoriesData.map((item: any) => ({
-        id: String(item.id),
-        name: String(item.name),
-        icon: String(item.icon || '📚'),
-        color: String(item.color || 'red'),
-        description: String(item.description || `${item.name}に関する問題`),
-        total_questions: Number(item.total_questions || 0),
-        created_at: String(item.created_at),
-        updated_at: String(item.updated_at || item.created_at),
-      }))
+  const handleNewProcessing = () => {
+    setProcessingResult(null)
+    setShowOCRProcessor(true)
+  }
 
-      console.log('📋 フォーマット後:', formattedCategories)
-
-      setCategories(formattedCategories)
-      console.log('✅ 管理画面: カテゴリー取得完了', {
-        count: formattedCategories.length,
-        categories: formattedCategories
-      })
-
-      // 統計情報を取得
-      try {
-        const statsResponse = await fetch('/api/debug-table-structure')
-        const statsResult = await statsResponse.json()
-        
-        if (statsResult.success) {
-          setStats({
-            totalQuestions: statsResult.data.questionsCount || 0,
-            totalUsers: 0,
-            totalQuizzes: statsResult.data.questionSets?.length || 0,
-            categoriesCount: formattedCategories.length
-          })
-        }
-      } catch (statsError) {
-        console.error('統計情報取得エラー:', statsError)
-      }
-
-    } catch (error) {
-      console.error('❌ 管理画面データ取得エラー:', error)
-    }
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">管理データを読み込み中...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <main className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">📊 ELT Drill 管理画面 (簡潔版)</h1>
-        <p className="text-gray-600">完全OCR機能による医療問題抽出システム</p>
-      </div>
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      <div className="container mx-auto px-4 py-8">
+        {/* ヘッダー */}
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">
+            🎓 ELT クイズアプリ 管理画面
+          </h1>
+          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+            ハイブリッドOCR機能でPDFから医療系問題を自動抽出し、クイズデータベースを構築します
+          </p>
+        </div>
 
-      {/* メイン機能 */}
-      <div className="grid md:grid-cols-2 gap-6 mb-8">
-        <Card className="hover:shadow-lg transition-shadow border-2 border-purple-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Brain className="h-5 w-5 text-purple-600" />
-              <Upload className="h-5 w-5 text-purple-600" />
-              完全OCR機能
-            </CardTitle>
-            <CardDescription>
-              強化されたOCR機能による医療問題抽出
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-gray-600 mb-4">
-              「３巻　心肺停止.pdf」などのPDFファイルから医療問題を自動抽出し、データベースに保存します。
-            </p>
-            <Button 
-              onClick={() => setShowPDFAnalyzer(true)}
-              className="w-full bg-purple-600 hover:bg-purple-700"
-            >
-              <Sparkles className="h-4 w-4 mr-2" />
-              完全OCR機能を開く
-            </Button>
-          </CardContent>
-        </Card>
+        {/* 統計カード */}
+        <div className="grid md:grid-cols-4 gap-6 mb-8">
+          <Card className="bg-white/80 backdrop-blur-sm border-blue-200">
+            <CardContent className="p-6 text-center">
+              <Database className="h-8 w-8 text-blue-600 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-gray-900">{stats.totalQuestions}</p>
+              <p className="text-sm text-gray-600">問題数</p>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-white/80 backdrop-blur-sm border-green-200">
+            <CardContent className="p-6 text-center">
+              <Settings className="h-8 w-8 text-green-600 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-gray-900">{stats.totalCategories}</p>
+              <p className="text-sm text-gray-600">カテゴリー数</p>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-white/80 backdrop-blur-sm border-purple-200">
+            <CardContent className="p-6 text-center">
+              <Brain className="h-8 w-8 text-purple-600 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-gray-900">{stats.totalUsers}</p>
+              <p className="text-sm text-gray-600">ユーザー数</p>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-white/80 backdrop-blur-sm border-orange-200">
+            <CardContent className="p-6 text-center">
+              <Sparkles className="h-8 w-8 text-orange-600 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-gray-900">{stats.totalBadges}</p>
+              <p className="text-sm text-gray-600">バッジ数</p>
+            </CardContent>
+          </Card>
+        </div>
 
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              システム情報
-            </CardTitle>
-            <CardDescription>
-              現在のデータベース状況
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4 text-center">
-              <div>
-                <p className="text-2xl font-bold text-red-600">{stats.totalQuestions}</p>
-                <p className="text-sm text-gray-600">登録問題数</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-green-600">{stats.categoriesCount}</p>
-                <p className="text-sm text-gray-600">カテゴリー数</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* カテゴリー一覧 */}
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle>📂 カテゴリー一覧</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid md:grid-cols-3 gap-4">
-            {categories.map((category) => (
-              <div key={category.id} className="p-3 border rounded-lg">
-                <h3 className="font-medium text-gray-900">{category.name}</h3>
-                <p className="text-sm text-gray-500">問題数: {category.total_questions}</p>
-              </div>
-            ))}
+        {/* メイン機能ボタン */}
+        {!showOCRProcessor && !processingResult && (
+          <div className="text-center mb-8">
+            <Card className="max-w-2xl mx-auto bg-white/90 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 justify-center text-2xl">
+                  🚀 ハイブリッドOCR処理
+                </CardTitle>
+                <CardDescription className="text-base">
+                  クライアントサイドOCR + サーバー側問題抽出でPDFを自動分析
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button 
+                  onClick={() => setShowOCRProcessor(true)}
+                  size="lg"
+                  className="w-full h-14 text-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                >
+                  <Upload className="mr-2 h-6 w-6" />
+                  PDFアップロード & OCR処理を開始
+                </Button>
+                
+                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                  <h4 className="font-medium text-blue-900 mb-2">🔧 新機能の特徴:</h4>
+                  <ul className="text-sm text-blue-800 space-y-1">
+                    <li>• ブラウザ内OCR処理でサーバー制限を回避</li>
+                    <li>• リアルタイムプログレス表示</li>
+                    <li>• 高精度な医療用語認識</li>
+                    <li>• 自動問題抽出・データベース保存</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+        )}
 
-      {/* モーダル */}
-      {showPDFAnalyzer && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
-              <h2 className="text-xl font-semibold">🔬 完全OCR機能</h2>
-              <Button
-                variant="outline"
-                onClick={() => setShowPDFAnalyzer(false)}
+        {/* OCR処理コンポーネント */}
+        {showOCRProcessor && (
+          <div className="mb-8">
+            <div className="flex justify-center mb-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowOCRProcessor(false)}
               >
-                閉じる
+                ← 戻る
               </Button>
             </div>
-            <div className="p-6">
-              <CompletePDFAnalyzer 
-                categories={categories} 
-                onClose={() => {
-                  setShowPDFAnalyzer(false)
-                  loadAdminData() // データを再読み込み
-                }} 
-              />
-            </div>
+            <ClientSideOCR 
+              categories={categories}
+              onProcessingComplete={handleProcessingComplete}
+            />
           </div>
-        </div>
-      )}
+        )}
+
+        {/* 処理結果表示 */}
+        {processingResult && (
+          <div className="mb-8">
+            <div className="flex justify-center mb-4">
+              <Button onClick={handleNewProcessing}>
+                新しいファイルを処理
+              </Button>
+            </div>
+            <Card className="max-w-4xl mx-auto">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  ✅ OCR処理完了
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-green-800 font-medium">{processingResult.message}</p>
+                    {processingResult.questionsFound > 0 && (
+                      <div className="mt-2 text-sm text-green-700">
+                        <p>📝 抽出された問題数: {processingResult.questionsFound}問</p>
+                        <p>🆔 問題セットID: {processingResult.questionSetId}</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {processingResult.extractedQuestions && (
+                    <div className="space-y-2">
+                      <h4 className="font-medium">抽出された問題（プレビュー）:</h4>
+                      {processingResult.extractedQuestions.map((q: any, index: number) => (
+                        <div key={index} className="p-3 bg-blue-50 border border-blue-200 rounded text-sm">
+                          <p><strong>問題 {index + 1}:</strong> {q.question}</p>
+                          <p className="text-blue-600">選択肢数: {q.optionCount}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* カテゴリー一覧 */}
+        <Card className="bg-white/90 backdrop-blur-sm">
+          <CardHeader>
+            <CardTitle>📂 カテゴリー一覧</CardTitle>
+            <CardDescription>
+              利用可能なクイズカテゴリー ({categories.length}個)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {categories.map((category) => (
+                <div key={category.id} className="p-4 border rounded-lg bg-white/70 hover:bg-white/90 transition-colors">
+                  <h3 className="font-medium text-gray-900">{category.name}</h3>
+                  <p className="text-sm text-gray-500 mt-1">ID: {category.id}</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    作成日: {new Date(category.created_at).toLocaleDateString('ja-JP')}
+                  </p>
+                </div>
+              ))}
+            </div>
+            
+            {categories.length === 0 && (
+              <div className="text-center py-8 text-gray-500">
+                カテゴリーが見つかりません
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </main>
   )
 }
