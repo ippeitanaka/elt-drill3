@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF詳細分析テスト</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .upload-area { border: 2px dashed #ccc; padding: 20px; text-align: center; margin: 20px 0; }
+        .results { margin-top: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .error { color: red; }
+        .success { color: green; }
+        pre { background: #f5f5f5; padding: 10px; overflow-x: auto; white-space: pre-wrap; }
+        .pattern-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+        .pattern-item { background: #f9f9f9; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🔍 PDF詳細分析テスト</h1>
+    <p>PDFファイルの詳細な分析を行い、なぜパーサーが失敗するかを調査します。</p>
+    
+    <div class="upload-area">
+        <input type="file" id="pdfFile" accept=".pdf" />
+        <br><br>
+        <button onclick="analyzePDF()">PDF分析実行</button>
+    </div>
+    
+    <div id="results" class="results"></div>
+
+    <script>
+        async function analyzePDF() {
+            const fileInput = document.getElementById('pdfFile');
+            const resultsDiv = document.getElementById('results');
+            
+            if (!fileInput.files[0]) {
+                alert('PDFファイルを選択してください');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            console.log('🔍 PDF分析開始:', file.name);
+            
+            resultsDiv.innerHTML = '<p>分析中...</p>';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                const response = await fetch('/api/debug-pdf-analysis', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                displayResults(result);
+                
+            } catch (error) {
+                console.error('分析エラー:', error);
+                resultsDiv.innerHTML = '<div class="error">分析中にエラーが発生しました: ' + error.message + '</div>';
+            }
+        }
+        
+        function displayResults(result) {
+            const resultsDiv = document.getElementById('results');
+            
+            if (!result.success) {
+                resultsDiv.innerHTML = '<div class="error">エラー: ' + result.error + '</div>';
+                return;
+            }
+            
+            const analysis = result.analysis;
+            const parseResult = result.parseResult;
+            
+            resultsDiv.innerHTML = `
+                <div class="section">
+                    <h3>📊 基本情報</h3>
+                    <ul>
+                        <li>テキスト長: ${analysis.textLength.toLocaleString()}文字</li>
+                        <li>総行数: ${analysis.totalLines.toLocaleString()}行</li>
+                        <li>日本語: ${analysis.hasJapanese ? '✅ 検出' : '❌ 未検出'}</li>
+                        <li>英語: ${analysis.hasEnglish ? '✅ 検出' : '❌ 未検出'}</li>
+                        <li>数字: ${analysis.hasNumbers ? '✅ 検出' : '❌ 未検出'}</li>
+                    </ul>
+                </div>
+                
+                <div class="section">
+                    <h3>🔍 問題パターン検出</h3>
+                    <div class="pattern-grid">
+                        <div class="pattern-item">
+                            <strong>標準形式（問1, Q1）</strong><br>
+                            ${analysis.questionPatterns.standardQ}個検出
+                        </div>
+                        <div class="pattern-item">
+                            <strong>番号形式（1. 2.）</strong><br>
+                            ${analysis.questionPatterns.numberedQ}個検出
+                        </div>
+                        <div class="pattern-item">
+                            <strong>接頭辞形式（第1問）</strong><br>
+                            ${analysis.questionPatterns.prefixedQ}個検出
+                        </div>
+                        <div class="pattern-item">
+                            <strong>No./# 形式</strong><br>
+                            ${analysis.questionPatterns.noStyleQ}個検出
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>📝 選択肢パターン検出</h3>
+                    <div class="pattern-grid">
+                        <div class="pattern-item">
+                            <strong>数字選択肢（1. 2.）</strong><br>
+                            ${analysis.choicePatterns.numbered}個検出
+                        </div>
+                        <div class="pattern-item">
+                            <strong>アルファベット（a. b.）</strong><br>
+                            ${analysis.choicePatterns.alphabetic}個検出
+                        </div>
+                        <div class="pattern-item">
+                            <strong>ひらがな（ア. イ.）</strong><br>
+                            ${analysis.choicePatterns.hiragana}個検出
+                        </div>
+                        <div class="pattern-item">
+                            <strong>括弧形式（(1) (2)）</strong><br>
+                            ${analysis.choicePatterns.parenthesis}個検出
+                        </div>
+                        <div class="pattern-item">
+                            <strong>インデント形式</strong><br>
+                            ${analysis.choicePatterns.indented}個検出
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>🏥 医療キーワード検出</h3>
+                    <div class="pattern-grid">
+                        <div class="pattern-item">
+                            <strong>患者関連</strong><br>
+                            ${analysis.medicalKeywords.patients}個検出
+                        </div>
+                        <div class="pattern-item">
+                            <strong>医療一般</strong><br>
+                            ${analysis.medicalKeywords.medical}個検出
+                        </div>
+                        <div class="pattern-item">
+                            <strong>救急関連</strong><br>
+                            ${analysis.medicalKeywords.emergency}個検出
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>🎯 パーサー結果</h3>
+                    <p><strong>検出された問題数:</strong> ${parseResult.questionsFound}問</p>
+                    ${parseResult.questions.length > 0 ? `
+                        <h4>検出された問題（最初の3問）:</h4>
+                        ${parseResult.questions.map((q, i) => `
+                            <div style="margin: 10px 0; padding: 10px; background: #f0f8ff; border-radius: 5px;">
+                                <strong>問題${q.questionNumber}:</strong> ${q.questionText}<br>
+                                <strong>選択肢数:</strong> ${Object.keys(q.choices || {}).length}個
+                            </div>
+                        `).join('')}
+                    ` : '<p>問題が検出されませんでした</p>'}
+                </div>
+                
+                <div class="section">
+                    <h3>💡 推奨対策</h3>
+                    <ul>
+                        ${result.recommendations.map(rec => `<li>${rec}</li>`).join('')}
+                    </ul>
+                </div>
+                
+                <div class="section">
+                    <h3>📄 抽出テキストサンプル（最初の1000文字）</h3>
+                    <pre>${result.sampleText}</pre>
+                </div>
+                
+                <div class="section">
+                    <h3>📋 最初の50行</h3>
+                    <pre>${analysis.firstLines.join('\n')}</pre>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
