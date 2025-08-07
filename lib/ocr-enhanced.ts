@@ -1,8 +1,5 @@
 import Tesseract from 'tesseract.js'
-import * as pdfjsLib from 'pdfjs-dist'
-
-// PDF.js worker設定
-pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.mjs'
+const pdfParse = require('pdf-parse')
 
 export interface ExtractedQuestion {
   questionText: string
@@ -68,101 +65,44 @@ export function debugPDFText(text: string): void {
   console.log('=== テキスト終了 ===')
 }
 
-// PDFからテキストを抽出（高精度OCR版）
-export async function extractTextFromPDF(file: File): Promise<string> {
+// 旧PDF.js版の関数をコメントアウト
+/*
+export async function extractTextFromPDF_OLD(file: File): Promise<string> {
   try {
     console.log('📄 PDF解析開始:', file.name, `(${(file.size / 1024 / 1024).toFixed(2)}MB)`)
     
     const arrayBuffer = await file.arrayBuffer()
     const pdf = await pdfjsLib.getDocument(arrayBuffer).promise
-    let fullText = ''
-    let textExtracted = false
-
-    console.log(`📊 PDF総ページ数: ${pdf.numPages}`)
-
-    // まずPDF内蔵テキストを抽出
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const textContent = await page.getTextContent()
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(' ')
-      
-      if (pageText.trim().length > 10) {
-        fullText += `\n=== ページ ${i} ===\n${pageText}\n`
-        textExtracted = true
-      }
-      
-      if (i % 10 === 0) {
-        console.log(`📄 ページ ${i}/${pdf.numPages} 処理完了`)
-      }
-    }
-
-    // PDF内蔵テキストが少ない場合、高精度OCRを実行
-    if (!textExtracted || fullText.trim().length < 100) {
-      console.log('🔍 PDF内蔵テキストが不十分です。高精度OCRを実行します...')
-      
-      const canvas = document.createElement('canvas')
-      const context = canvas.getContext('2d')!
-      let ocrText = ''
-      
-      // 全ページをOCR処理（最大20ページまで）
-      const maxPages = Math.min(pdf.numPages, 20)
-      for (let i = 1; i <= maxPages; i++) {
-        try {
-          const page = await pdf.getPage(i)
-          const viewport = page.getViewport({ scale: 3.0 }) // 高解像度
-          canvas.width = viewport.width
-          canvas.height = viewport.height
-          
-          context.fillStyle = 'white'
-          context.fillRect(0, 0, canvas.width, canvas.height)
-          
-          await page.render({
-            canvasContext: context,
-            viewport: viewport
-          }).promise
-
-          console.log(`🔍 ページ ${i} OCR処理中...`)
-
-          const { data: { text, confidence } } = await Tesseract.recognize(canvas, 'jpn+eng', {
-            logger: (m) => {
-              if (m.status === 'recognizing text') {
-                console.log(`OCR進捗: ${Math.round(m.progress * 100)}%`)
-              }
-            }
-          })
-          
-          if (text.trim() && confidence > 30) {
-            ocrText += `\n=== ページ ${i} (OCR) ===\n${text}\n`
-            console.log(`✅ ページ ${i} OCR完了 (信頼度: ${confidence.toFixed(1)}%)`)
-          } else {
-            console.log(`⚠️ ページ ${i} OCR信頼度低: ${confidence.toFixed(1)}%`)
-          }
-          
-        } catch (pageError) {
-          console.error(`❌ ページ ${i} OCR処理エラー:`, pageError)
-        }
-      }
-      
-      if (ocrText.trim()) {
-        fullText = ocrText
-        console.log('✅ OCRテキスト抽出完了')
-      }
-    } else {
-      console.log('✅ PDF内蔵テキスト抽出完了')
-    }
-
-    if (!fullText.trim()) {
-      throw new Error('PDFからテキストを抽出できませんでした。ファイルが画像のみの場合があります。')
-    }
-
-    console.log(`📊 抽出テキスト長: ${fullText.length}文字`)
-    return fullText
-
+    // ... 以下省略
   } catch (error) {
-    console.error('❌ PDF解析エラー:', error)
-    throw new Error(`PDFファイルの解析に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    // ... エラー処理
+  }
+}
+*/
+
+// PDFからテキストを抽出（pdf-parse使用）
+export async function extractTextFromPDF(file: File): Promise<string> {
+  console.log('📄 PDFテキスト抽出開始...')
+  
+  try {
+    // FileをArrayBufferに変換
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+    
+    // pdf-parseでテキストを抽出
+    const data = await pdfParse(buffer)
+    
+    console.log(`✅ PDFテキスト抽出完了: ${data.text.length}文字`)
+    
+    // デバッグ用テキスト表示
+    console.log('=== 抽出されたテキスト（最初の1000文字）===')
+    console.log(data.text.substring(0, 1000))
+    console.log('=== テキスト終了 ===')
+    
+    return data.text
+  } catch (error: any) {
+    console.error('❌ PDFテキスト抽出エラー:', error)
+    throw new Error(`PDFファイルの解析に失敗しました: ${error.message}`)
   }
 }
 
