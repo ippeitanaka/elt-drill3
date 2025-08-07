@@ -176,83 +176,18 @@ async function extractTextWithPDFJS(uint8Array: Uint8Array): Promise<string> {
   if (!hasTextContent || allText.trim().length === 0) {
     console.log('🔄 テキストが抽出されませんでした。OCR処理に切り替えます...')
     // OCR処理にフォールバック
-    return await extractTextWithTesseractOCR(uint8Array)
+    return await extractTextWithOCR(uint8Array)
   }
   
   return allText.trim()
 }
 
-// メイン関数 - PDF処理の主要エントリーポイント
-export async function extractTextWithOCR(pdfBuffer: Buffer, filename: string = 'unknown.pdf'): Promise<ExtractedQuestion[]> {
-  console.log(`🚀 PDF処理開始: ${filename}`)
-  console.log(`📁 ファイルサイズ: ${pdfBuffer.length} bytes`)
-  
-  try {
-    // PDFからテキストを抽出（Uint8Arrayを直接処理）
-    const extractedText = await extractTextFromPDFBuffer(new Uint8Array(pdfBuffer))
-    console.log(`📝 抽出テキスト長: ${extractedText.length}文字`)
-    
-    // テキストから問題を解析
-    const questions = parseQuestionsFromText(extractedText)
-    console.log(`📚 最終問題数: ${questions.length}問`)
-    
-    return questions
-  } catch (error: any) {
-    console.error(`❌ PDF処理エラー (${filename}):`, error)
-    
-    // エラー時は手動入力ガイドを返す
-    return [{
-      questionText: `PDFファイル「${filename}」の処理でエラーが発生しました。手動で問題を追加してください。`,
-      choices: [
-        '1. 管理画面で手動で問題を追加',
-        '2. 別のPDFファイルを試行',
-        '3. テキスト形式のファイルを使用',
-        '4. サポートに問い合わせ'
-      ],
-      difficulty: 1
-    }]
-  }
-}
-
-// PDFバッファからテキストを抽出する内部関数
-async function extractTextFromPDFBuffer(uint8Array: Uint8Array): Promise<string> {
-  console.log('📄 PDFバッファ解析開始...')
-  
-  try {
-    // PDF.jsを使用したテキスト抽出を試行
-    const pdfText = await extractTextWithPDFJS(uint8Array)
-    
-    if (pdfText && pdfText.length > 100) {
-      console.log('✅ PDF.js抽出成功')
-      return pdfText
-    }
-    
-    console.log('⚠️ PDF.js抽出が不十分、OCR処理に移行...')
-    
-    // OCR処理にフォールバック
-    return await extractTextWithTesseractOCR(uint8Array)
-    
-  } catch (error: any) {
-    console.error('❌ PDFバッファ処理エラー:', error)
-    throw error
-  }
-}
-
-// Tesseract.js OCRを使用したテキスト抽出（内部関数）
-async function extractTextWithTesseractOCR(uint8Array: Uint8Array): Promise<string> {
+// Tesseract.js OCRを使用したテキスト抽出
+async function extractTextWithOCR(uint8Array: Uint8Array): Promise<string> {
   console.log('🤖 Tesseract.js OCR処理開始...')
   
   try {
-    // まず、実験的に軽量版OCR処理を試行
-    console.log('📊 OCR実験的処理開始...')
-    const result = await extractTextWithExperimentalOCR(uint8Array)
-    if (result && result.length > 100) {
-      console.log('✅ 実験的OCR成功')
-      return result
-    }
-    
     // 軽量版OCR処理を試行
-    console.log('📊 標準OCR処理開始...')
     return await extractTextWithSimpleOCR(uint8Array)
   } catch (ocrError: any) {
     console.error('❌ OCR処理エラー:', ocrError)
@@ -292,102 +227,6 @@ async function extractTextWithTesseractOCR(uint8Array: Uint8Array): Promise<stri
     } catch (fallbackError: any) {
       throw new Error(`OCR処理とフォールバック処理の両方が失敗しました: ${ocrError.message}`)
     }
-  }
-}
-
-// 実験的OCR処理（より確実性を重視）
-async function extractTextWithExperimentalOCR(uint8Array: Uint8Array): Promise<string> {
-  console.log('🧪 実験的OCR処理開始...')
-  
-  try {
-    const pdfjsLib = await import('pdfjs-dist')
-    
-    // Vercel環境でのWorker設定を無効化
-    if (typeof window === 'undefined') {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = ''
-    }
-    
-    const loadingTask = pdfjsLib.getDocument({
-      data: uint8Array,
-      useSystemFonts: true,
-      stopAtErrors: false,
-      useWorkerFetch: false,
-      isEvalSupported: false
-    })
-    
-    const pdf = await loadingTask.promise
-    console.log(`🧪 実験的OCR: ${pdf.numPages}ページを処理開始`)
-    
-    let allOcrText = ''
-    
-    // 最初の1ページのみ処理して安定性を確保
-    for (let pageNum = 1; pageNum <= 1; pageNum++) {
-      try {
-        console.log(`🧪 ページ ${pageNum} 実験的OCR処理中...`)
-        
-        const page = await pdf.getPage(pageNum)
-        
-        // より低い解像度で処理の安定性を向上
-        const viewport = page.getViewport({ scale: 1.0 })
-        
-        // Canvasを使用してページを画像として描画
-        const { createCanvas } = await import('canvas')
-        const canvas = createCanvas(viewport.width, viewport.height)
-        const context = canvas.getContext('2d')
-        
-        const renderContext = {
-          canvasContext: context as any,
-          viewport: viewport
-        }
-        
-        await page.render(renderContext).promise
-        
-        // CanvasをBase64画像に変換
-        const dataUrl = canvas.toDataURL('image/png')
-        
-        // Tesseract.jsでOCR処理（実験版 - タイムアウト設定）
-        console.log(`🧪 ページ ${pageNum} OCR実行中（実験版）...`)
-        
-        // OCR処理を Promise.race でタイムアウト制御
-        const ocrPromise = Tesseract.recognize(dataUrl, 'jpn+eng', {
-          logger: (m: any) => {
-            if (m.status === 'recognizing text') {
-              console.log(`🧪 実験OCR進捗: ${Math.round(m.progress * 100)}%`)
-            }
-          }
-        })
-        
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('OCR処理タイムアウト（30秒）')), 30000)
-        })
-        
-        const ocrResult = await Promise.race([ocrPromise, timeoutPromise]) as any
-        const pageText = ocrResult.data.text.trim()
-        
-        if (pageText.length > 0) {
-          allOcrText += `\n=== ページ ${pageNum} (実験OCR) ===\n${pageText}\n`
-          console.log(`✅ 実験OCR ページ ${pageNum} 完了: ${pageText.length}文字`)
-          console.log(`📄 実験OCR テキスト例: ${pageText.substring(0, 150)}...`)
-        } else {
-          console.warn(`⚠️ 実験OCR ページ ${pageNum}: テキストが検出されませんでした`)
-        }
-        
-      } catch (pageError: any) {
-        console.error(`❌ 実験OCR ページ ${pageNum} エラー:`, pageError)
-        throw pageError // 実験版では厳密にエラーを伝播
-      }
-    }
-    
-    if (allOcrText.trim().length === 0) {
-      throw new Error('実験的OCR処理でテキストが抽出されませんでした')
-    }
-    
-    console.log(`🎯 実験的OCR処理完了: 合計${allOcrText.length}文字抽出`)
-    return allOcrText.trim()
-    
-  } catch (error: any) {
-    console.error('❌ 実験的OCR処理エラー:', error)
-    throw error
   }
 }
 
@@ -561,7 +400,6 @@ async function extractTextFallback(buffer: Buffer): Promise<string> {
 export function parseQuestionsFromText(text: string): ExtractedQuestion[] {
   console.log('🔍 問題解析開始...')
   console.log(`📝 解析対象テキスト長: ${text.length}文字`)
-  console.log(`📄 テキストプレビュー: ${text.substring(0, 200)}...`)
   
   if (!text || text.trim().length < 50) {
     console.warn('⚠️ テキストが短すぎます（50文字未満）')
@@ -581,13 +419,6 @@ export function parseQuestionsFromText(text: string): ExtractedQuestion[] {
       ],
       difficulty: 1
     }]
-  }
-  
-  // 実験的に簡単な問題パターンを追加
-  const experimentalQuestions = extractExperimentalQuestions(text)
-  if (experimentalQuestions.length > 0) {
-    console.log(`🧪 実験的問題抽出成功: ${experimentalQuestions.length}問`)
-    return experimentalQuestions
   }
   
   const blocks = splitIntoQuestionBlocks(text)
@@ -617,87 +448,6 @@ export function parseQuestionsFromText(text: string): ExtractedQuestion[] {
   }
   
   return questions
-}
-
-// 実験的問題抽出（シンプルなパターンマッチング）
-function extractExperimentalQuestions(text: string): ExtractedQuestion[] {
-  console.log('🧪 実験的問題抽出開始...')
-  
-  const questions: ExtractedQuestion[] = []
-  
-  // 非常にシンプルなパターンで問題を検出
-  const simplePatterns = [
-    // 「1.」「2.」などの単純な番号付きパターン
-    /(\d+)\.\s*([^1-9]+?)(?=\d+\.|$)/g,
-    // 「問1」「問2」パターン  
-    /問(\d+)[．\s]*([^問]+?)(?=問\d+|$)/g,
-    // 「Question」パターン
-    /(Question\s*\d+)[:\s]*([^Q]+?)(?=Question|$)/gi
-  ]
-  
-  for (const pattern of simplePatterns) {
-    const matches = Array.from(text.matchAll(pattern))
-    console.log(`🧪 パターンマッチ結果: ${matches.length}個`)
-    
-    if (matches.length > 0) {
-      for (const match of matches) {
-        const questionContent = match[2]?.trim()
-        if (questionContent && questionContent.length > 20) {
-          // 簡易的な選択肢抽出
-          const choices = extractSimpleChoices(questionContent)
-          
-          if (choices.length >= 2) {
-            questions.push({
-              questionText: questionContent.split('\n')[0] || questionContent.substring(0, 100),
-              choices: choices,
-              difficulty: 1
-            })
-            console.log(`🧪 実験的問題抽出: ${questions.length}問目`)
-          }
-        }
-      }
-      
-      if (questions.length > 0) break // 成功したらすぐに返す
-    }
-  }
-  
-  return questions
-}
-
-// シンプルな選択肢抽出
-function extractSimpleChoices(text: string): string[] {
-  const choices: string[] = []
-  
-  // 複数のパターンを試行
-  const choicePatterns = [
-    /[1-5][.\)]\s*([^\n]+)/g,
-    /[ア-オ][.\)]\s*([^\n]+)/g,
-    /[a-e][.\)]\s*([^\n]+)/gi,
-    /①([^\n②③④⑤]+)/g,
-    /②([^\n①③④⑤]+)/g,
-    /③([^\n①②④⑤]+)/g,
-    /④([^\n①②③⑤]+)/g,
-    /⑤([^\n①②③④]+)/g
-  ]
-  
-  for (const pattern of choicePatterns) {
-    const matches = Array.from(text.matchAll(pattern))
-    
-    if (matches.length >= 2) {
-      for (const match of matches) {
-        const choice = match[1]?.trim()
-        if (choice && choice.length > 0 && choice.length < 200) {
-          choices.push(choice)
-        }
-      }
-      
-      if (choices.length >= 2) break
-    }
-  }
-  
-  // 重複除去
-  const uniqueChoices = Array.from(new Set(choices))
-  return uniqueChoices.slice(0, 5)
 }
 
 // 解析できないコンテンツの分析

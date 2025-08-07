@@ -8,6 +8,13 @@ declare module 'pdf-parse' {
     version: string
   }
 
-  function pdfParse(buffer: Buffer): Promise<PDFData>
+  interface PDFOptions {
+    max?: number
+    normalizeWhitespace?: boolean
+    disableCombineTextItems?: boolean
+    useWorker?: boolean
+  }
+
+  function pdfParse(buffer: Buffer, options?: PDFOptions): Promise<PDFData>
   export = pdfParse
 }

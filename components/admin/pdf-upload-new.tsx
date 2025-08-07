@@ -96,13 +96,18 @@ export function PDFUploadNew({ categories, onSuccess, onClose }: PDFUploadNewPro
       const questionUpload = uploadResult.data.uploads.find((u: any) => u.type === 'question')
       const answerUpload = uploadResult.data.uploads.find((u: any) => u.type === 'answer')
       
-      // 問題PDFのpublic URLを取得
-      const questionFileUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/pdfs/${questionUpload.path}`
+      // アップロードAPIから返されたpublic URLを使用
+      const questionFileUrl = questionUpload.publicUrl
+      
+      console.log('🔗 使用するPDF URL:', {
+        questionFileUrl,
+        uploadResult: uploadResult.data
+      })
       
       // 解答PDFのpublic URLを取得（任意）
       let answerFileUrl: string | null = null
       if (answerUpload) {
-        answerFileUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/pdfs/${answerUpload.path}`
+        answerFileUrl = answerUpload.publicUrl
       }
 
       setProgress(50)

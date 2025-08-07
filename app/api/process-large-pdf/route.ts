@@ -36,10 +36,22 @@ export async function POST(request: NextRequest) {
     try {
       // 実際のPDFからOCRで問題を抽出
       console.log('📄 PDFファイルダウンロード開始...')
+      console.log('🌐 リクエストURL:', questionFileUrl)
       
       // PDFファイルをダウンロード
       const pdfResponse = await fetch(questionFileUrl)
+      console.log('📊 PDFレスポンス:', {
+        status: pdfResponse.status,
+        statusText: pdfResponse.statusText,
+        headers: Object.fromEntries(pdfResponse.headers.entries())
+      })
+      
       if (!pdfResponse.ok) {
+        console.error('❌ PDF ダウンロード失敗:', {
+          url: questionFileUrl,
+          status: pdfResponse.status,
+          statusText: pdfResponse.statusText
+        })
         throw new Error(`PDF download failed: ${pdfResponse.status} ${pdfResponse.statusText}`)
       }
       
@@ -64,7 +76,23 @@ export async function POST(request: NextRequest) {
       
       // 高精度OCRで問題を抽出
       console.log('🔍 高精度OCR処理開始...')
-      const ocrResult = await processQuizPDFs(pdfFile, answerFile)
+      
+      // OCR処理を安全に実行
+      let ocrResult
+      try {
+        ocrResult = await processQuizPDFs(pdfFile, answerFile)
+      } catch (ocrProcessError: any) {
+        console.error('❌ OCR処理内部エラー:', ocrProcessError)
+        
+        // 特定のエラーパターンに応じた対処
+        if (ocrProcessError.message?.includes('ENOENT')) {
+          throw new Error('PDFファイルの処理中にシステムエラーが発生しました。ファイル形式を確認してください。')
+        } else if (ocrProcessError.message?.includes('pdf-parse')) {
+          throw new Error('PDFファイルの解析に失敗しました。別のPDFファイルを使用してください。')
+        } else {
+          throw new Error(`OCR処理エラー: ${ocrProcessError.message}`)
+        }
+      }
       
       if (!ocrResult.questions || ocrResult.questions.length === 0) {
         throw new Error('PDFから問題を抽出できませんでした。ファイルが画像形式または読み取り困難な形式の可能性があります。')
