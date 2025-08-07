@@ -47,12 +47,20 @@
                 const formData = new FormData();
                 formData.append('file', file);
                 
+                console.log('📡 APIにリクエスト送信中...');
                 const response = await fetch('/api/debug-pdf-analysis', {
                     method: 'POST',
                     body: formData
                 });
                 
+                console.log('📡 レスポンス受信:', response.status, response.statusText);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTPエラー: ${response.status} ${response.statusText}`);
+                }
+                
                 const result = await response.json();
+                console.log('📋 分析結果:', result);
                 displayResults(result);
                 
             } catch (error) {
