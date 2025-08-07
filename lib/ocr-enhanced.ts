@@ -1,5 +1,4 @@
 import Tesseract from 'tesseract.js'
-const pdfParse = require('pdf-parse')
 
 export interface ExtractedQuestion {
   questionText: string
@@ -65,32 +64,20 @@ export function debugPDFText(text: string): void {
   console.log('=== テキスト終了 ===')
 }
 
-// 旧PDF.js版の関数をコメントアウト
-/*
-export async function extractTextFromPDF_OLD(file: File): Promise<string> {
-  try {
-    console.log('📄 PDF解析開始:', file.name, `(${(file.size / 1024 / 1024).toFixed(2)}MB)`)
-    
-    const arrayBuffer = await file.arrayBuffer()
-    const pdf = await pdfjsLib.getDocument(arrayBuffer).promise
-    // ... 以下省略
-  } catch (error) {
-    // ... エラー処理
-  }
-}
-*/
-
 // PDFからテキストを抽出（pdf-parse使用）
 export async function extractTextFromPDF(file: File): Promise<string> {
   console.log('📄 PDFテキスト抽出開始...')
   
   try {
+    // pdf-parseを動的にインポート
+    const pdfParse = await import('pdf-parse')
+    
     // FileをArrayBufferに変換
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
     
     // pdf-parseでテキストを抽出
-    const data = await pdfParse(buffer)
+    const data = await pdfParse.default(buffer)
     
     console.log(`✅ PDFテキスト抽出完了: ${data.text.length}文字`)
     
