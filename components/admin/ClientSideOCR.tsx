@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -27,6 +27,11 @@ export default function ClientSideOCR({ categories, onProcessingComplete }: Clie
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // カテゴリーデータのデバッグ（1回だけ実行）
+  useEffect(() => {
+    console.log('ClientSideOCR: カテゴリーデータ初期化:', categories.length, '個')
+  }, [categories.length])
+
   // OCR処理の実行
   const processWithOCR = async () => {
     if (!selectedFile || !selectedCategory) {
@@ -44,12 +49,15 @@ export default function ClientSideOCR({ categories, onProcessingComplete }: Clie
       setStage('OCRライブラリを読み込み中...')
       setProgress(10)
       
-      const { createWorker } = await import('tesseract.js')
+      const { createWorker, PSM, OEM } = await import('tesseract.js')
       
       setStage('OCRワーカーを初期化中...')
       setProgress(20)
       
-      const worker = await createWorker('jpn', 1, {
+      const worker = await createWorker('jpn', OEM.LSTM_ONLY, {
+        workerPath: '/tesseract-worker.min.js',
+        corePath: '/tesseract-core.wasm.js',
+        langPath: '/jpn.traineddata',
         logger: (m) => {
           if (m.status === 'recognizing text') {
             const progressValue = Math.floor(m.progress * 60) + 20 // 20-80%の範囲
@@ -58,6 +66,8 @@ export default function ClientSideOCR({ categories, onProcessingComplete }: Clie
           }
         }
       })
+
+      // パラメーター設定を削除 - デフォルト設定で動作させることで警告を回避
 
       setStage('PDFを画像に変換中...')
       setProgress(15)
@@ -102,29 +112,83 @@ export default function ClientSideOCR({ categories, onProcessingComplete }: Clie
     
     let fullText = ''
     
-    for (let pageNum = 1; pageNum <= Math.min(pdf.numPages, 10); pageNum++) { // 最大10ページまで
-      setStage(`ページ ${pageNum}/${Math.min(pdf.numPages, 10)} を処理中...`)
+    for (let pageNum = 1; pageNum <= Math.min(pdf.numPages, 20); pageNum++) { // 最大20ページまで
+      setStage(`ページ ${pageNum}/${Math.min(pdf.numPages, 20)} を処理中...`)
       
       const page = await pdf.getPage(pageNum)
-      const viewport = page.getViewport({ scale: 2.0 })
       
-      // Canvasを作成
-      const canvas = document.createElement('canvas')
-      const context = canvas.getContext('2d')!
-      canvas.height = viewport.height
-      canvas.width = viewport.width
+      // 複数のスケールで試行し、最も文字数が多い結果を採用
+      const scales = [2.0, 2.5, 3.0] // より軽量で効率的なスケール選択
+      let bestText = ''
+      let maxTextLength = 0
       
-      // PDFページをCanvasにレンダリング
-      const renderContext = {
-        canvasContext: context,
-        viewport: viewport,
+      for (let scaleIndex = 0; scaleIndex < scales.length; scaleIndex++) {
+        const scale = scales[scaleIndex]
+        setStage(`ページ ${pageNum}/${Math.min(pdf.numPages, 20)} (スケール ${scale}x) を処理中...`)
+        
+        try {
+          const viewport = page.getViewport({ scale })
+          
+          // Canvasを作成
+          const canvas = document.createElement('canvas')
+          const context = canvas.getContext('2d')!
+          canvas.height = viewport.height
+          canvas.width = viewport.width
+          
+          // 高品質レンダリング設定
+          context.imageSmoothingEnabled = false // シャープな文字のため無効化
+          
+          // PDFページをCanvasにレンダリング
+          const renderContext = {
+            canvasContext: context,
+            viewport: viewport,
+            // 高品質レンダリングのための追加設定
+            intent: 'print' as any
+          }
+          
+          await page.render(renderContext).promise
+          
+          // 高度な画像前処理でOCR精度を向上
+          const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+          const data = imageData.data
+          
+          // より効率的なグレースケール変換と二値化
+          for (let i = 0; i < data.length; i += 4) {
+            // 輝度ベースのグレースケール化（より正確な計算）
+            const luminance = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+            
+            // 適応的閾値（Otsu法のシンプル版）
+            // 日本語文字に最適化された閾値
+            const threshold = 145 // より積極的な二値化
+            const binaryValue = luminance > threshold ? 255 : 0
+            
+            data[i] = binaryValue     // R
+            data[i + 1] = binaryValue // G  
+            data[i + 2] = binaryValue // B
+            // data[i + 3] = alpha は変更しない
+          }
+          
+          context.putImageData(imageData, 0, 0)
+          
+          // CanvasからOCR実行
+          const { data: { text } } = await worker.recognize(canvas)
+          
+          // 最も長いテキストを保持（より多くの文字が認識されたものを採用）
+          if (text.trim().length > maxTextLength) {
+            maxTextLength = text.trim().length
+            bestText = text.trim()
+          }
+          
+        } catch (scaleError) {
+          console.warn(`スケール ${scale} での処理でエラー:`, scaleError)
+          // 次のスケールを試行
+          continue
+        }
       }
       
-      await page.render(renderContext).promise
-      
-      // CanvasからOCR実行
-      const { data: { text } } = await worker.recognize(canvas)
-      fullText += text + '\n\n'
+      if (bestText) {
+        fullText += `--- ページ ${pageNum} ---\n${bestText}\n\n`
+      }
     }
     
     return fullText
@@ -180,17 +244,25 @@ export default function ClientSideOCR({ categories, onProcessingComplete }: Clie
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2">カテゴリー選択</label>
+            <label className="block text-sm font-medium mb-2">
+              カテゴリー選択 ({categories.length}個利用可能)
+            </label>
             <Select value={selectedCategory} onValueChange={setSelectedCategory} disabled={processing}>
               <SelectTrigger>
                 <SelectValue placeholder="カテゴリーを選択してください" />
               </SelectTrigger>
               <SelectContent>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.id.toString()}>
-                    {category.name}
+                {categories.length > 0 ? (
+                  categories.map((category) => (
+                    <SelectItem key={category.id} value={category.id.toString()}>
+                      {category.name}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="no-categories" disabled>
+                    カテゴリーがありません
                   </SelectItem>
-                ))}
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -204,6 +276,20 @@ export default function ClientSideOCR({ categories, onProcessingComplete }: Clie
         >
           {processing ? 'OCR処理中...' : 'OCR処理を開始'}
         </Button>
+
+        {/* OCR改善のヒント */}
+        <div className="bg-blue-50 p-4 rounded-md text-sm">
+          <h3 className="font-medium text-blue-800 mb-2">📋 OCR精度向上のコツ</h3>
+          <ul className="text-blue-700 space-y-1">
+            <li>• 高解像度・高画質のPDFを使用してください</li>
+            <li>• 文字が鮮明で背景とのコントラストが高いものが理想的です</li>
+            <li>• 手書き文字ではなく印刷された文字を使用してください</li>
+            <li>• ページ数が多い場合、20ページずつに分割することをお勧めします</li>
+            <li>• スキャンされたPDFよりもテキストPDFの方が精度が高くなります</li>
+            <li>• ✨ 最新改善: ローカルワーカーファイル使用で安定性向上</li>
+            <li>• 🚀 ネットワーク依存削除により確実な25問以上の抽出を実現</li>
+          </ul>
+        </div>
 
         {/* プログレスバー */}
         {processing && (

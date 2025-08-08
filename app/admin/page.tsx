@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Brain, Upload, Settings, Database, Sparkles } from 'lucide-react'
 import { getSupabaseClient } from '@/lib/supabase'
 import ClientSideOCR from '@/components/admin/ClientSideOCR'
+import { ServerOCRUpload } from '@/components/admin/ServerOCRUpload'
 interface Category {
   id: number
   name: string
@@ -29,38 +30,39 @@ export default function AdminPage() {
   })
   const [loading, setLoading] = useState(true)
   const [showOCRProcessor, setShowOCRProcessor] = useState(false)
+  const [showServerOCR, setShowServerOCR] = useState(false)
   const [processingResult, setProcessingResult] = useState<any>(null)
 
   // カテゴリーデータの読み込み
   const loadAdminData = async () => {
     try {
       setLoading(true)
-      const supabase = getSupabaseClient()
-
-      // カテゴリーを取得
-      const { data: categoriesData, error: categoriesError } = await supabase
-        .from('categories')
-        .select('*')
-        .order('name')
-
-      if (categoriesError) {
-        console.error('カテゴリー取得エラー:', categoriesError)
+      
+      // カテゴリーをAPIエンドポイント経由で取得
+      const categoriesResponse = await fetch('/api/debug/categories')
+      let categoriesCount = 0
+      if (categoriesResponse.ok) {
+        const categoriesResult = await categoriesResponse.json()
+        console.log('カテゴリーAPI経由取得成功:', categoriesResult)
+        if (categoriesResult.success && categoriesResult.categories) {
+          setCategories(categoriesResult.categories as Category[])
+          categoriesCount = categoriesResult.categories.length
+        }
       } else {
-        setCategories((categoriesData || []) as unknown as Category[])
+        console.error('カテゴリーAPI取得エラー:', categoriesResponse.status)
       }
 
-      // 統計データを取得
-      const [questionsResult, usersResult, badgesResult] = await Promise.allSettled([
-        supabase.from('questions').select('id', { count: 'exact' }),
-        supabase.from('users').select('id', { count: 'exact' }),
-        supabase.from('badges').select('id', { count: 'exact' })
+      // 統計データも代替APIで取得
+      const supabase = getSupabaseClient()
+      const [questionsResult] = await Promise.allSettled([
+        supabase.from('questions').select('id', { count: 'exact' })
       ])
 
       setStats({
         totalQuestions: questionsResult.status === 'fulfilled' ? questionsResult.value.count || 0 : 0,
-        totalCategories: categoriesData?.length || 0,
-        totalUsers: usersResult.status === 'fulfilled' ? usersResult.value.count || 0 : 0,
-        totalBadges: badgesResult.status === 'fulfilled' ? badgesResult.value.count || 0 : 0
+        totalCategories: categoriesCount,
+        totalUsers: 0, // usersテーブルは存在しないため0
+        totalBadges: 0 // badgesテーブルは存在しないため0
       })
 
     } catch (error) {
@@ -145,42 +147,81 @@ export default function AdminPage() {
         </div>
 
         {/* メイン機能ボタン */}
-        {!showOCRProcessor && !processingResult && (
+        {!showOCRProcessor && !showServerOCR && !processingResult && (
           <div className="text-center mb-8">
-            <Card className="max-w-2xl mx-auto bg-white/90 backdrop-blur-sm">
+            <Card className="max-w-3xl mx-auto bg-white/90 backdrop-blur-sm">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 justify-center text-2xl">
-                  🚀 ハイブリッドOCR処理
+                  🚀 OCR処理方式選択
                 </CardTitle>
                 <CardDescription className="text-base">
-                  クライアントサイドOCR + サーバー側問題抽出でPDFを自動分析
+                  PDFから問題を抽出する方式を選択してください
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <Button 
-                  onClick={() => setShowOCRProcessor(true)}
-                  size="lg"
-                  className="w-full h-14 text-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-                >
-                  <Upload className="mr-2 h-6 w-6" />
-                  PDFアップロード & OCR処理を開始
-                </Button>
-                
-                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                  <h4 className="font-medium text-blue-900 mb-2">🔧 新機能の特徴:</h4>
-                  <ul className="text-sm text-blue-800 space-y-1">
-                    <li>• ブラウザ内OCR処理でサーバー制限を回避</li>
-                    <li>• リアルタイムプログレス表示</li>
-                    <li>• 高精度な医療用語認識</li>
-                    <li>• 自動問題抽出・データベース保存</li>
-                  </ul>
+              <CardContent className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-4">
+                  {/* クライアントサイドOCR */}
+                  <Card className="border-2 hover:border-blue-300 transition-colors">
+                    <CardHeader>
+                      <CardTitle className="text-lg text-blue-700">
+                        🖥️ クライアントサイドOCR
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <ul className="text-sm space-y-1">
+                        <li>• ブラウザ内で処理</li>
+                        <li>• リアルタイムプレビュー</li>
+                        <li>• 高速な初期処理</li>
+                        <li>• ローカルワーカーファイル使用</li>
+                      </ul>
+                      <Button 
+                        onClick={() => setShowOCRProcessor(true)}
+                        className="w-full bg-blue-600 hover:bg-blue-700"
+                      >
+                        <Upload className="mr-2 h-4 w-4" />
+                        クライアントOCR開始
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  {/* サーバーサイドOCR */}
+                  <Card className="border-2 hover:border-green-300 transition-colors">
+                    <CardHeader>
+                      <CardTitle className="text-lg text-green-700">
+                        🚀 サーバーサイドOCR
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <ul className="text-sm space-y-1">
+                        <li>• サーバーで高精度処理</li>
+                        <li>• クライアント負荷軽減</li>
+                        <li>• 安定したOCR精度</li>
+                        <li>• 直接データベース保存</li>
+                      </ul>
+                      <Button 
+                        onClick={() => setShowServerOCR(true)}
+                        className="w-full bg-green-600 hover:bg-green-700"
+                      >
+                        <Database className="mr-2 h-4 w-4" />
+                        サーバーOCR開始
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="mt-6 p-4 bg-amber-50 rounded-lg border border-amber-200">
+                  <h4 className="font-medium text-amber-900 mb-2">� どちらを選ぶべき？</h4>
+                  <div className="text-sm text-amber-800 space-y-1">
+                    <div><strong>クライアントOCR:</strong> 素早く結果を確認したい場合</div>
+                    <div><strong>サーバーOCR:</strong> より安定した処理を求める場合</div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           </div>
         )}
 
-        {/* OCR処理コンポーネント */}
+        {/* クライアントサイドOCR処理コンポーネント */}
         {showOCRProcessor && (
           <div className="mb-8">
             <div className="flex justify-center mb-4">
@@ -195,6 +236,21 @@ export default function AdminPage() {
               categories={categories}
               onProcessingComplete={handleProcessingComplete}
             />
+          </div>
+        )}
+
+        {/* サーバーサイドOCR処理コンポーネント */}
+        {showServerOCR && (
+          <div className="mb-8">
+            <div className="flex justify-center mb-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowServerOCR(false)}
+              >
+                ← 戻る
+              </Button>
+            </div>
+            <ServerOCRUpload />
           </div>
         )}
 
