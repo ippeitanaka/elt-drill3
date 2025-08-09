@@ -49,16 +49,16 @@ export default function ClientSideOCR({ categories, onProcessingComplete }: Clie
       setStage('OCRライブラリを読み込み中...')
       setProgress(10)
       
-      const { createWorker, PSM, OEM } = await import('tesseract.js')
+      const { createWorker } = await import('tesseract.js')
       
       setStage('OCRワーカーを初期化中...')
       setProgress(20)
       
-      const worker = await createWorker('jpn', OEM.LSTM_ONLY, {
+      const worker = await createWorker('jpn', {
         workerPath: '/tesseract-worker.min.js',
         corePath: '/tesseract-core.wasm.js',
-        langPath: '/jpn.traineddata',
-        logger: (m) => {
+        langPath: '/',
+        logger: (m: any) => {
           if (m.status === 'recognizing text') {
             const progressValue = Math.floor(m.progress * 60) + 20 // 20-80%の範囲
             setProgress(progressValue)
@@ -240,6 +240,8 @@ export default function ClientSideOCR({ categories, onProcessingComplete }: Clie
               onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
               className="w-full p-2 border rounded-md"
               disabled={processing}
+              aria-label="PDFファイル選択"
+              title="PDFファイルを選択"
             />
           </div>
 
@@ -314,6 +316,9 @@ export default function ClientSideOCR({ categories, onProcessingComplete }: Clie
               value={extractedText.substring(0, 500) + (extractedText.length > 500 ? '...' : '')}
               readOnly
               className="w-full h-32 p-2 border rounded-md text-xs font-mono bg-gray-50"
+              aria-label="抽出テキストプレビュー"
+              title="抽出テキストプレビュー"
+              placeholder="抽出されたテキストの先頭を表示します"
             />
             <p className="text-xs text-gray-500">
               {extractedText.length} 文字のテキストが抽出されました

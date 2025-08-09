@@ -39,14 +39,14 @@ export default function AdminPage() {
       setLoading(true)
       
       // カテゴリーをAPIエンドポイント経由で取得
-      const categoriesResponse = await fetch('/api/debug/categories')
+      const categoriesResponse = await fetch('/api/debug-categories')
       let categoriesCount = 0
       if (categoriesResponse.ok) {
         const categoriesResult = await categoriesResponse.json()
         console.log('カテゴリーAPI経由取得成功:', categoriesResult)
-        if (categoriesResult.success && categoriesResult.categories) {
-          setCategories(categoriesResult.categories as Category[])
-          categoriesCount = categoriesResult.categories.length
+        if (categoriesResult.success && categoriesResult.data) {
+          setCategories(categoriesResult.data as Category[])
+          categoriesCount = categoriesResult.data.length
         }
       } else {
         console.error('カテゴリーAPI取得エラー:', categoriesResponse.status)

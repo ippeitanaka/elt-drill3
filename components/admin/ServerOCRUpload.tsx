@@ -94,17 +94,16 @@ export function ServerOCRUpload() {
       setProgress(20)
       addLog(`${getDatasetSizeLabel(datasetSize)}のデータセットでPDFファイルをサーバーに送信中...`)
 
-      // まずシンプルサーバーOCRを試行
-      let response = await fetch('/api/simple-server-ocr', {
+      // まず本番のサーバーOCRを試行（実際のPDFをOCR）
+      let response = await fetch('/api/server-ocr-upload', {
         method: 'POST',
         body: formData
       })
 
+      // 失敗した場合のみ、サンプルデータベースの簡易APIにフォールバック
       if (!response.ok) {
-        addLog('⚠️ シンプルサーバーOCRが失敗、高度なサーバーOCRを試行中...')
-        
-        // フォールバックとして元のサーバーOCRを試行
-        response = await fetch('/api/server-ocr-upload', {
+        addLog('⚠️ 本番サーバーOCRが失敗。サンプルデータAPIにフォールバックします...')
+        response = await fetch('/api/simple-server-ocr', {
           method: 'POST',
           body: formData
         })
