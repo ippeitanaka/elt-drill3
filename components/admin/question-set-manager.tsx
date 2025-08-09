@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Plus, Edit, Trash2, Save, X, FolderPlus } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { getSupabaseClient } from "@/lib/supabase"
 import { toast } from "@/hooks/use-toast"
 import type { QuestionSet, Category } from "@/lib/types"
 
@@ -47,14 +47,11 @@ export function QuestionSetManager({ categories, onSuccess }: QuestionSetManager
   }, [selectedCategory])
 
   const loadQuestionSets = async () => {
+    const supabase = getSupabaseClient()
     let query = supabase
       .from("question_sets")
-      .select(`
-        *,
-        category:categories(name, color),
-        questions(id)
-      `)
-      .order("order_index")
+      .select("*")
+      .order("created_at", { ascending: true })
 
     if (selectedCategory) {
       query = query.eq("category_id", selectedCategory)
@@ -86,8 +83,8 @@ export function QuestionSetManager({ categories, onSuccess }: QuestionSetManager
       title: set.title,
       description: set.description || "",
       category_id: set.category_id,
-      order_index: set.order_index,
-      is_active: set.is_active,
+      order_index: (set as any).order_index ?? 1,
+      is_active: (set as any).is_active ?? true,
     })
     setEditingSet(set)
     setShowSetForm(true)
@@ -106,14 +103,22 @@ export function QuestionSetManager({ categories, onSuccess }: QuestionSetManager
     setIsLoading(true)
 
     try {
+      const supabase = getSupabaseClient()
       if (editingSet) {
-        // Update existing question set
+        // Update existing question set（存在しない列は送らない）
+        const payload: any = {
+          title: setForm.title,
+          category_id: setForm.category_id,
+          updated_at: new Date().toISOString(),
+        }
+        if (setForm.description) payload.description = setForm.description
+        // order_index / is_active は本番に列がない場合がある
+        if ('order_index' in (editingSet as any)) payload.order_index = setForm.order_index
+        if ('is_active' in (editingSet as any)) payload.is_active = setForm.is_active
+
         const { error } = await supabase
           .from("question_sets")
-          .update({
-            ...setForm,
-            updated_at: new Date().toISOString(),
-          })
+          .update(payload)
           .eq("id", editingSet.id)
 
         if (error) throw error
@@ -123,8 +128,14 @@ export function QuestionSetManager({ categories, onSuccess }: QuestionSetManager
           description: "問題セットの内容を正常に更新しました。",
         })
       } else {
-        // Create new question set
-        const { error } = await supabase.from("question_sets").insert(setForm)
+        // Create new question set（最小列のみ）
+        const { error } = await supabase
+          .from("question_sets")
+          .insert({
+            title: setForm.title,
+            category_id: setForm.category_id,
+            // description / order_index / is_active は省略
+          })
 
         if (error) throw error
 
@@ -153,6 +164,7 @@ export function QuestionSetManager({ categories, onSuccess }: QuestionSetManager
     if (!confirm("この問題セットを削除しますか？関連する問題もすべて削除されます。")) return
 
     try {
+      const supabase = getSupabaseClient()
       const { error } = await supabase.from("question_sets").delete().eq("id", setId)
 
       if (error) throw error
@@ -175,9 +187,13 @@ export function QuestionSetManager({ categories, onSuccess }: QuestionSetManager
 
   const handleToggleActive = async (setId: string, isActive: boolean) => {
     try {
+      const supabase = getSupabaseClient()
+      // 本番に is_active 列がない場合はスキップ
+      const payload: any = { updated_at: new Date().toISOString() }
+      payload.is_active = isActive
       const { error } = await supabase
         .from("question_sets")
-        .update({ is_active: isActive, updated_at: new Date().toISOString() })
+        .update(payload)
         .eq("id", setId)
 
       if (error) throw error
@@ -196,6 +212,8 @@ export function QuestionSetManager({ categories, onSuccess }: QuestionSetManager
       })
     }
   }
+
+  const getCategoryName = (id: string) => categories.find((c) => c.id === id)?.name || "カテゴリー"
 
   return (
     <div className="space-y-6">
@@ -221,7 +239,7 @@ export function QuestionSetManager({ categories, onSuccess }: QuestionSetManager
         <CardContent>
           <div className="space-y-2">
             <Label>カテゴリーフィルター</Label>
-            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+            <Select value={selectedCategory} onValueChange={(v) => setSelectedCategory(v === 'all' ? '' : v)}>
               <SelectTrigger className="w-64">
                 <SelectValue placeholder="すべてのカテゴリー" />
               </SelectTrigger>
@@ -249,27 +267,30 @@ export function QuestionSetManager({ categories, onSuccess }: QuestionSetManager
                     <h3 className="font-semibold text-lg">{set.title}</h3>
                     <Badge
                       variant="outline"
-                      className={`bg-${set.category?.color || "blue"}-100 text-${set.category?.color || "blue"}-700`}
+                      className={`bg-blue-100 text-blue-700`}
                     >
-                      {set.category?.name}
+                      {getCategoryName(set.category_id)}
                     </Badge>
-                    <Badge variant={set.is_active ? "default" : "secondary"}>{set.is_active ? "有効" : "無効"}</Badge>
-                    <Badge variant="outline">{set.questions?.length || 0}問</Badge>
+                    {typeof set.is_active === 'boolean' && (
+                      <Badge variant={set.is_active ? "default" : "secondary"}>{set.is_active ? "有効" : "無効"}</Badge>
+                    )}
                   </div>
                   {set.description && <p className="text-muted-foreground mb-3">{set.description}</p>}
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span>順序: {set.order_index}</span>
+                    {('order_index' in (set as any)) && <span>順序: {(set as any).order_index}</span>}
                     <span>作成日: {new Date(set.created_at).toLocaleDateString("ja-JP")}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      checked={set.is_active}
-                      onCheckedChange={(checked) => handleToggleActive(set.id, checked)}
-                    />
-                    <Label className="text-sm">有効</Label>
-                  </div>
+                  {typeof set.is_active === 'boolean' && (
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        checked={!!set.is_active}
+                        onCheckedChange={(checked) => handleToggleActive(set.id, checked)}
+                      />
+                      <Label className="text-sm">有効</Label>
+                    </div>
+                  )}
                   <Button variant="outline" size="sm" onClick={() => handleEditSet(set)}>
                     <Edit className="h-4 w-4" />
                   </Button>

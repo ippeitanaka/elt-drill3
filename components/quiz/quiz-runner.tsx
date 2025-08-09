@@ -41,6 +41,8 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
   const [timeRemaining, setTimeRemaining] = useState(30)
   const [isCompleted, setIsCompleted] = useState(false)
   const [loading, setLoading] = useState(true)
+  // 追加: 途中リタイア状態
+  const [isRetired, setIsRetired] = useState(false)
 
   useEffect(() => {
     loadQuestions()
@@ -54,6 +56,15 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
       handleTimeUp()
     }
   }, [timeRemaining, isAnswered, isCompleted, questions.length])
+
+  const normalizeLetter = (val: any): 'a'|'b'|'c'|'d'|'e' => {
+    if (val === null || val === undefined) return 'a'
+    const s = String(val).trim().toLowerCase()
+    if (['a','b','c','d','e'].includes(s)) return s as any
+    if (/^[0-4]$/.test(s)) return (['a','b','c','d','e'][parseInt(s,10)] as any)
+    if (/^[1-5]$/.test(s)) return (['a','b','c','d','e'][parseInt(s,10)-1] as any)
+    return 'a'
+  }
 
   const loadQuestions = async () => {
     try {
@@ -99,40 +110,55 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
         return
       }
 
-      // データをシャッフルして、choicesを作成（新しいデータ形式対応）
+      // データを整形（トリムして空白のみを除外。正解インデックスも再計算）
       const processedQuestions = questionsData.map((q: any) => {
-        let choices = []
-        let correctAnswerIndex = 0
-        
-        // 新しい形式（options と correct_answers が JSON）の場合
+        const trim = (v: any) => (v ?? '').toString().trim()
+
+        // a-e のキー付き配列に正規化してから空を除外
+        let keyed: Array<{ key: 'a'|'b'|'c'|'d'|'e'; text: string }> = []
+        let correctLetter: 'a'|'b'|'c'|'d'|'e' = 'a'
+
         if (q.options && q.correct_answers) {
           try {
             const options = typeof q.options === 'string' ? JSON.parse(q.options) : q.options
             const correctAnswers = typeof q.correct_answers === 'string' ? JSON.parse(q.correct_answers) : q.correct_answers
-            
-            choices = [options.a, options.b, options.c, options.d, options.e].filter(Boolean)
-            correctAnswerIndex = ['a', 'b', 'c', 'd', 'e'].indexOf(correctAnswers[0]?.toLowerCase() || 'a')
+            correctLetter = normalizeLetter(Array.isArray(correctAnswers) ? correctAnswers[0] : correctAnswers)
+            keyed = [
+              { key: 'a', text: trim(options?.a) },
+              { key: 'b', text: trim(options?.b) },
+              { key: 'c', text: trim(options?.c) },
+              { key: 'd', text: trim(options?.d) },
+              { key: 'e', text: trim(options?.e) },
+            ]
           } catch (error) {
             console.warn('JSON解析エラー:', error)
-            choices = ['選択肢が読み込めません']
-            correctAnswerIndex = 0
           }
         }
-        // 古い形式（option_a-e と correct_answer）の場合
-        else if (q.option_a || q.option_b || q.option_c || q.option_d || q.option_e) {
-          choices = [q.option_a, q.option_b, q.option_c, q.option_d, q.option_e].filter(Boolean)
-          correctAnswerIndex = ['a', 'b', 'c', 'd', 'e'].indexOf(q.correct_answer?.toLowerCase() || 'a')
-        }
-        // データが不完全な場合のフォールバック
-        else {
-          choices = ['データが不完全です']
-          correctAnswerIndex = 0
-        }
         
+        if (keyed.length === 0) {
+          // 古い形式
+          keyed = [
+            { key: 'a', text: trim(q.option_a) },
+            { key: 'b', text: trim(q.option_b) },
+            { key: 'c', text: trim(q.option_c) },
+            { key: 'd', text: trim(q.option_d) },
+            { key: 'e', text: trim(q.option_e) },
+          ]
+          correctLetter = normalizeLetter(q.correct_answer)
+        }
+
+        const filtered = keyed.filter(k => k.text.length > 0)
+        const choices = filtered.map(k => k.text)
+        const correctIndex = Math.max(0, filtered.findIndex(k => k.key === correctLetter))
+
+        // フォールバック（全て空）
+        const finalChoices = choices.length > 0 ? choices : ['（選択肢がありません）']
+        const finalCorrectIndex = choices.length > 0 ? (correctIndex >= 0 ? correctIndex : 0) : 0
+
         return {
           ...q,
-          choices,
-          correct_answer_index: Math.max(0, correctAnswerIndex) // 負の値を防ぐ
+          choices: finalChoices,
+          correct_answer_index: finalCorrectIndex,
         }
       })
       
@@ -155,6 +181,8 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
       })
       
       setQuestions(shuffledQuestions)
+      // 開始時はリタイア状態をリセット
+      setIsRetired(false)
       setLoading(false)
     } catch (error: any) {
       console.error('問題読み込みエラー:', error)
@@ -194,6 +222,12 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
     }
   }
 
+  // 追加: 途中リタイア処理（その時点で結果画面へ）
+  const handleRetire = () => {
+    setIsRetired(true)
+    setIsCompleted(true)
+  }
+
   const handleRestartQuiz = () => {
     setCurrentQuestionIndex(0)
     setSelectedAnswer(null)
@@ -201,6 +235,7 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
     setScore(0)
     setTimeRemaining(30)
     setIsCompleted(false)
+    setIsRetired(false)
     loadQuestions()
   }
 
@@ -240,13 +275,16 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
   }
 
   if (isCompleted) {
-    const percentage = Math.round((score / questions.length) * 100)
+    // リタイア時は回答済み数を分母にする
+    const answeredCount = currentQuestionIndex + (isAnswered ? 1 : 0)
+    const denominator = isRetired ? Math.max(1, answeredCount) : questions.length
+    const percentage = denominator === 0 ? 0 : Math.round((score / denominator) * 100)
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50 p-4">
         <div className="max-w-2xl mx-auto pt-8">
           <Card className="border-0 shadow-xl">
             <CardHeader className="text-center bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-t-lg">
-              <CardTitle className="text-2xl font-bold">クイズ完了！</CardTitle>
+              <CardTitle className="text-2xl font-bold">{isRetired ? '途中リタイア' : 'クイズ完了！'}</CardTitle>
             </CardHeader>
             <CardContent className="p-8">
               <div className="text-center space-y-6">
@@ -255,14 +293,22 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
                 </div>
                 <div className="space-y-2">
                   <p className="text-xl text-gray-700">
-                    {questions.length}問中 <span className="font-bold text-indigo-600">{score}問正解</span>
+                    {isRetired ? (
+                      <>
+                        回答済み <span className="font-bold text-indigo-600">{answeredCount}</span> 問中 <span className="font-bold text-indigo-600">{score}</span> 問正解
+                      </>
+                    ) : (
+                      <>
+                        {questions.length}問中 <span className="font-bold text-indigo-600">{score}問正解</span>
+                      </>
+                    )}
                   </p>
                   <div className="flex justify-center">
                     <Badge 
                       variant={percentage >= 80 ? "default" : percentage >= 60 ? "secondary" : "destructive"}
                       className="text-lg px-4 py-2"
                     >
-                      {percentage >= 80 ? "素晴らしい！" : percentage >= 60 ? "良い結果！" : "もう少し頑張ろう！"}
+                      {isRetired ? 'お疲れさまでした' : (percentage >= 80 ? "素晴らしい！" : percentage >= 60 ? "良い結果！" : "もう少し頑張ろう！")}
                     </Badge>
                   </div>
                 </div>
@@ -340,6 +386,19 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
           </Button>
           
           <div className="flex items-center space-x-4">
+            {/* 途中リタイアボタン */}
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                if (window.confirm('この時点で終了して結果を表示しますか？')) {
+                  handleRetire()
+                }
+              }}
+            >
+              リタイア
+            </Button>
+
             <Badge variant="outline" className="flex items-center space-x-1">
               <span>{currentQuestionIndex + 1} / {questions.length}</span>
             </Badge>

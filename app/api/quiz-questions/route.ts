@@ -1,6 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
 
+async function fetchQuestionsBySetIds(adminClient: any, setIds: any[], limit?: number) {
+  // order_index → question_number → id → 無指定 の順でフォールバック
+  const base = adminClient.from('questions').select('*').in('question_set_id', setIds)
+  const tries = [
+    (q: any) => q.order('order_index', { ascending: true }),
+    (q: any) => q.order('question_number', { ascending: true }),
+    (q: any) => q.order('id', { ascending: true }),
+    (q: any) => q, // 最後は順序指定なし
+  ]
+
+  for (let i = 0; i < tries.length; i++) {
+    try {
+      let query = tries[i](base)
+      if (limit && typeof query.limit === 'function') {
+        query = query.limit(limit)
+      }
+      const { data, error } = await query
+      if (!error) return data || []
+      console.warn(`Questions fetch attempt ${i + 1} failed:`, error)
+    } catch (e) {
+      console.warn(`Questions fetch attempt ${i + 1} threw error:`, e)
+    }
+  }
+  return []
+}
+
 export async function POST(request: NextRequest) {
   try {
     const adminClient = createServerClient()
@@ -14,23 +40,11 @@ export async function POST(request: NextRequest) {
       questionCount
     })
 
-    let questions = []
+    let questions: any[] = []
 
     if (selectedSets && selectedSets.length > 0) {
-      // 特定の問題セットから取得（制限なし）
-      const { data, error } = await adminClient
-        .from('questions')
-        .select('*')
-        .in('question_set_id', selectedSets)
-        .order('question_number', { ascending: true })
-
-      if (error) {
-        console.error('Questions by sets error:', error)
-        throw error
-      }
-      questions = data || []
+      questions = await fetchQuestionsBySetIds(adminClient, selectedSets, questionCount)
     } else if (selectedCategories && selectedCategories.length > 0) {
-      // カテゴリーから問題セット経由で取得
       const { data: questionSets, error: setsError } = await adminClient
         .from('question_sets')
         .select('id')
@@ -41,20 +55,10 @@ export async function POST(request: NextRequest) {
         throw setsError
       }
 
-      const questionSetIds = questionSets?.map(qs => qs.id) || []
+      const questionSetIds = questionSets?.map((qs: any) => qs.id) || []
       
       if (questionSetIds.length > 0) {
-        const { data, error } = await adminClient
-          .from('questions')
-          .select('*')
-          .in('question_set_id', questionSetIds)
-          .order('question_number', { ascending: true })
-
-        if (error) {
-          console.error('Questions by categories error:', error)
-          throw error
-        }
-        questions = data || []
+        questions = await fetchQuestionsBySetIds(adminClient, questionSetIds, questionCount)
       }
     }
 
@@ -93,18 +97,17 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // カテゴリーから問題セット経由で取得
     const { data: questionSets, error: setsError } = await adminClient
       .from('question_sets')
       .select('id')
-      .eq('category_id', parseInt(categoryId))
+      .eq('category_id', categoryId)
 
     if (setsError) {
       console.error('Question sets error:', setsError)
       throw setsError
     }
 
-    const questionSetIds = questionSets?.map(qs => qs.id) || []
+    const questionSetIds = questionSets?.map((qs: any) => qs.id) || []
     
     if (questionSetIds.length === 0) {
       return NextResponse.json({
@@ -113,17 +116,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const { data: questions, error } = await adminClient
-      .from('questions')
-      .select('*')
-      .in('question_set_id', questionSetIds)
-      .order('question_number', { ascending: true })
-      .limit(limit)
-
-    if (error) {
-      console.error('Questions error:', error)
-      throw error
-    }
+    const questions = await fetchQuestionsBySetIds(adminClient, questionSetIds, limit)
 
     console.log('取得した問題数:', questions?.length || 0)
 

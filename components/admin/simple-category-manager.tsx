@@ -250,6 +250,7 @@ export default function SimpleCategoryManager() {
                   <div>
                     <label className="block text-sm font-medium mb-1">アイコン</label>
                     <select
+                      aria-label="アイコンを選択"
                       value={newCategory.icon}
                       onChange={(e) => setNewCategory({...newCategory, icon: e.target.value})}
                       className="w-full p-2 border rounded-md"
@@ -262,6 +263,7 @@ export default function SimpleCategoryManager() {
                   <div>
                     <label className="block text-sm font-medium mb-1">色</label>
                     <select
+                      aria-label="色を選択"
                       value={newCategory.color}
                       onChange={(e) => setNewCategory({...newCategory, color: e.target.value})}
                       className="w-full p-2 border rounded-md"
@@ -306,6 +308,7 @@ export default function SimpleCategoryManager() {
                         <div>
                           <label className="block text-sm font-medium mb-1">アイコン</label>
                           <select
+                            aria-label="アイコンを選択"
                             value={editState.icon}
                             onChange={(e) => setEditState({...editState, icon: e.target.value})}
                             className="w-full p-2 border rounded-md"
@@ -318,6 +321,7 @@ export default function SimpleCategoryManager() {
                         <div>
                           <label className="block text-sm font-medium mb-1">色</label>
                           <select
+                            aria-label="色を選択"
                             value={editState.color}
                             onChange={(e) => setEditState({...editState, color: e.target.value})}
                             className="w-full p-2 border rounded-md"

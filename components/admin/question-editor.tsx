@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Plus, Edit, Trash2, Save, X, Upload } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { getSupabaseClient } from "@/lib/supabase"
 import { toast } from "@/hooks/use-toast"
 import type { Question, QuestionSet, Category } from "@/lib/types"
 
@@ -69,6 +69,7 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
   }, [selectedQuestionSet])
 
   const loadQuestionSets = async () => {
+    const supabase = getSupabaseClient()
     const { data, error } = await supabase
       .from("question_sets")
       .select("*")
@@ -84,6 +85,7 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
   }
 
   const loadQuestions = async () => {
+    const supabase = getSupabaseClient()
     const { data, error } = await supabase
       .from("questions")
       .select("*")
@@ -121,9 +123,9 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
       option_b: question.option_b,
       option_c: question.option_c,
       option_d: question.option_d,
-      option_e: question.option_e,
-      correct_answer: question.correct_answer,
-      difficulty: question.difficulty,
+      option_e: question.option_e || "",
+      correct_answer: question.correct_answer as any,
+      difficulty: (question.difficulty as any) || "medium",
       explanation: question.explanation || "",
       order_index: question.order_index,
     })
@@ -150,7 +152,6 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
       return
     }
 
-    // 5択すべての選択肢が入力されているかチェック
     if (
       !questionForm.option_a.trim() ||
       !questionForm.option_b.trim() ||
@@ -169,8 +170,8 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
     setIsLoading(true)
 
     try {
+      const supabase = getSupabaseClient()
       if (editingQuestion) {
-        // Update existing question
         const { error } = await supabase
           .from("questions")
           .update({
@@ -186,7 +187,6 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
           description: "問題の内容を正常に更新しました。",
         })
       } else {
-        // Create new question
         const { error } = await supabase.from("questions").insert({
           question_set_id: selectedQuestionSet,
           ...questionForm,
@@ -201,7 +201,7 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
       }
 
       // Update category question count
-      await supabase.rpc("update_category_question_count", {
+      await getSupabaseClient().rpc("update_category_question_count", {
         category_id: selectedCategory,
       })
 
@@ -224,6 +224,7 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
     if (!confirm("この問題を削除しますか？")) return
 
     try {
+      const supabase = getSupabaseClient()
       const { error } = await supabase.from("questions").delete().eq("id", questionId)
 
       if (error) throw error
@@ -233,8 +234,7 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
         description: "問題を正常に削除しました。",
       })
 
-      // Update category question count
-      await supabase.rpc("update_category_question_count", {
+      await getSupabaseClient().rpc("update_category_question_count", {
         category_id: selectedCategory,
       })
 
@@ -263,9 +263,8 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
 
     try {
       const lines = bulkImportText.trim().split("\n")
-      const questionsToImport = []
+      const questionsToImport = [] as any[]
 
-      // 5択問題は8行で構成（問題文 + 選択肢A-E + 正解 + 解説）
       for (let i = 0; i < lines.length; i += 8) {
         if (i + 7 < lines.length) {
           const question = {
@@ -292,12 +291,12 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
         throw new Error("有効な問題データが見つかりませんでした。")
       }
 
+      const supabase = getSupabaseClient()
       const { error } = await supabase.from("questions").insert(questionsToImport)
 
       if (error) throw error
 
-      // Update category question count
-      await supabase.rpc("update_category_question_count", {
+      await getSupabaseClient().rpc("update_category_question_count", {
         category_id: selectedCategory,
       })
 
@@ -415,7 +414,7 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-2">
                               <Badge variant="outline">問題 {index + 1}</Badge>
-                              {getDifficultyBadge(question.difficulty)}
+                              {getDifficultyBadge(question.difficulty || 'medium')}
                               <Badge variant="secondary">正解: {question.correct_answer}</Badge>
                             </div>
                             <p className="font-medium mb-3">{question.question_text}</p>
@@ -497,6 +496,7 @@ A. β受容体遮断
 B. α・β受容体刺激
 C. カルシウム拮抗
 D. ACE阻害
+E. 利尿作用
 E. 利尿作用
 B
 アドレナリンはα・β受容体を刺激し、心収縮力増強と血管収縮作用を示します。`}

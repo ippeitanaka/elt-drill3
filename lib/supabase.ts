@@ -1,34 +1,27 @@
-import { createClient } from "@supabase/supabase-js"
+import { createClient, SupabaseClient } from "@supabase/supabase-js"
 
-// Supabase環境変数
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://hfanhwznppxngpbjkgno.supabase.co"
-const supabaseAnonKey =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmYW5od3pucHB4bmdwYmprZ25vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIzMDc0MDEsImV4cCI6MjA2Nzg4MzQwMX0.38vPdxOHreyEXV41mRUDBZO15Y6R0umyUI1s26W1eDE"
+let browserClient: SupabaseClient | null = null
 
-let supabaseInstance: ReturnType<typeof createClient> | null = null;
-
-export const getSupabaseClient = () => {
-  if (!supabaseInstance) {
-    supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
-      realtime: {
-        params: {
-          eventsPerSecond: 10
-        }
-      }
-    });
+export const getSupabaseClient = (): SupabaseClient => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !anon) {
+    throw new Error('Supabase client requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY')
   }
-  return supabaseInstance;
-};
-
-// Server-side client for admin operations
-export const createServerClient = () => {
-  const serviceRoleKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmYW5od3pucHB4bmdwYmprZ25vIiwicm9zZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MjMwNzQwMSwiZXhwIjoyMDY3ODgzNDAxfQ.A5xIaYlRhjWRv5jT-QdCUB8ThV2u_ufXXnV_o6dZ-a4";
-
-  return createClient(supabaseUrl, serviceRoleKey)
+  if (!browserClient) {
+    browserClient = createClient(url, anon, { realtime: { params: { eventsPerSecond: 10 } } })
+  }
+  return browserClient
 }
 
-// 統一されたエクスポート
-export const supabase = getSupabaseClient();
+export const createServerClient = (): SupabaseClient => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const service = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !service) {
+    throw new Error('Server Supabase client requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY')
+  }
+  return createClient(url, service)
+}
+
+// 互換性のためのダミーエクスポート（旧コードが参照しても直ちに初期化しない）
+export const supabase = undefined as unknown as SupabaseClient
