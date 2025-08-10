@@ -110,9 +110,18 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
         return
       }
 
+      // 不可視文字や全角スペースを除去してからトリム
+      const stripInvisible = (s: any) =>
+        (s ?? '')
+          .toString()
+          .replace(/[\u200B-\u200D\uFEFF]/g, '') // ゼロ幅類
+          .replace(/\u3000/g, ' ') // 全角スペース
+          .replace(/\s+/g, ' ')
+          .trim()
+
       // データを整形（トリムして空白のみを除外。正解インデックスも再計算）
       const processedQuestions = questionsData.map((q: any) => {
-        const trim = (v: any) => (v ?? '').toString().trim()
+        const trim = (v: any) => stripInvisible(v)
 
         // a-e のキー付き配列に正規化してから空を除外
         let keyed: Array<{ key: 'a'|'b'|'c'|'d'|'e'; text: string }> = []
@@ -147,7 +156,8 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
           correctLetter = normalizeLetter(q.correct_answer)
         }
 
-        const filtered = keyed.filter(k => k.text.length > 0)
+        // 見た目が空になる文字を除去した後で判定
+        const filtered = keyed.filter(k => stripInvisible(k.text).length > 0)
         const choices = filtered.map(k => k.text)
         const correctIndex = Math.max(0, filtered.findIndex(k => k.key === correctLetter))
 
@@ -155,8 +165,19 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
         const finalChoices = choices.length > 0 ? choices : ['（選択肢がありません）']
         const finalCorrectIndex = choices.length > 0 ? (correctIndex >= 0 ? correctIndex : 0) : 0
 
+        // 難易度/ポイントのデフォルト
+        const difficulty_level = (() => {
+          const d = (q.difficulty || '').toString().toLowerCase()
+          if (d === 'easy') return 1
+          if (d === 'hard') return 5
+          return 3
+        })()
+        const points = Number.isFinite(q.points) ? q.points : 1
+
         return {
           ...q,
+          difficulty_level,
+          points,
           choices: finalChoices,
           correct_answer_index: finalCorrectIndex,
         }
@@ -177,7 +198,8 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
       console.log('QuizRunner: 問題処理完了', {
         originalCount: questionsData.length,
         uniqueCount: uniqueQuestions.length,
-        finalCount: shuffledQuestions.length
+        finalCount: shuffledQuestions.length,
+        sampleChoices: shuffledQuestions[0]?.choices
       })
       
       setQuestions(shuffledQuestions)
