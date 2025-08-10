@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { RPGHUD } from '@/components/rpg/HUD'
 import { RPGFrame, RPGPanel, RPGButton } from '@/components/rpg/Frame'
 import { EncounterCard } from '@/components/rpg/Encounter'
+import { BGM } from '@/components/rpg/Music'
 
 // Stage = category
 export default function RPGHome() {
@@ -59,7 +60,10 @@ export default function RPGHome() {
       <div className="max-w-5xl mx-auto p-4 space-y-4">
         <div className="flex items-center justify-between">
           <Link href="/" className="text-cyan-300 underline">オープニング</Link>
-          <div className="text-[#ffcc00] text-sm">EMERGENCY QUEST</div>
+          <div className="flex items-center gap-3">
+            <BGM />
+            <div className="text-[#ffcc00] text-sm">EMERGENCY QUEST</div>
+          </div>
         </div>
 
         <RPGHUD level={1} stageName={selectedCategory?.name ? `「${selectedCategory.name}」` : 'ステージ選択'} />
@@ -79,12 +83,15 @@ export default function RPGHome() {
         {selectedCategory && (
           <RPGPanel title={`ステージ「${selectedCategory.name}」 勝利条件: 正答率80%`}>
             <div className="p-3 space-y-3">
-              <div className="text-cyan-200 text-sm">敵の強さ: {'★★★★★'.slice(0, selectedCategory.difficulty)}</div>
-              <div className="flex gap-3">
-                <Link href={`/rpg/stage/${selectedCategory.id}`}>
-                  <RPGButton>冒険をはじめる</RPGButton>
-                </Link>
-                <RPGButton variant="ghost" onClick={() => setSelectedCategory(null)}>戻る</RPGButton>
+              {/* ボタンを上部に移動 */}
+              <div className="flex justify-between items-center">
+                <div className="text-cyan-200 text-sm">敵の強さ: {'★★★★★'.slice(0, selectedCategory.difficulty)}</div>
+                <div className="flex gap-3">
+                  <Link href={`/rpg/stage/${selectedCategory.id}`}>
+                    <RPGButton>冒険をはじめる</RPGButton>
+                  </Link>
+                  <RPGButton variant="ghost" onClick={() => setSelectedCategory(null)}>戻る</RPGButton>
+                </div>
               </div>
             </div>
           </RPGPanel>
