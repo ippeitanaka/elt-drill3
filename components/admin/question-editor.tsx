@@ -74,7 +74,7 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
       .from("question_sets")
       .select("*")
       .eq("category_id", selectedCategory)
-      .order("order_index")
+      .order("created_at", { ascending: true })
 
     if (error) {
       console.error("Error loading question sets:", error)
@@ -90,7 +90,7 @@ export function QuestionEditor({ categories, onSuccess }: QuestionEditorProps) {
       .from("questions")
       .select("*")
       .eq("question_set_id", selectedQuestionSet)
-      .order("order_index")
+      .order("id", { ascending: true })
 
     if (error) {
       console.error("Error loading questions:", error)

@@ -58,7 +58,7 @@ export function CategorySelector({ onStartQuiz }: CategorySelectorProps) {
       const { data: setsData, error: setsError } = await supabase
         .from('question_sets')
         .select('*')
-        .order('order_index', { ascending: true })
+        .order('created_at', { ascending: true })
 
       if (setsError) {
         console.error('問題セット取得エラー:', setsError)
