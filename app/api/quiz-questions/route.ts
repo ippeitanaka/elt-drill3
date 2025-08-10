@@ -20,37 +20,38 @@ function toStringIds(ids: any[] | undefined): string[] {
 }
 
 async function fetchQuestionsBySetIds(adminClient: any, setIds: any[], limit?: number) {
-  // order_index → question_number → id → 無指定 の順でフォールバック
+  // 注: クエリビルダーはミュータブルなため、各試行ごとに新しく構築する
+  const idVariants: any[][] = []
   const numericIds = toNumericIds(setIds)
   const stringIds = toStringIds(setIds)
-  const bases = [
-    adminClient.from('questions').select('*').in('question_set_id', setIds),
-    ...(numericIds.length > 0
-      ? [adminClient.from('questions').select('*').in('question_set_id', numericIds)]
-      : []),
-    ...(stringIds.length > 0
-      ? [adminClient.from('questions').select('*').in('question_set_id', stringIds)]
-      : []),
-  ]
-  const orderTries = [
-    (q: any) => q.order('order_index', { ascending: true }),
+  if (Array.isArray(setIds) && setIds.length > 0) idVariants.push(setIds)
+  if (numericIds.length > 0) idVariants.push(numericIds)
+  if (stringIds.length > 0) idVariants.push(stringIds)
+
+  // 安全な並び順から試す: question_number → id → created_at → (最後に) order_index
+  const orderers: Array<(q: any) => any> = [
     (q: any) => q.order('question_number', { ascending: true }),
     (q: any) => q.order('id', { ascending: true }),
+    (q: any) => q.order('created_at', { ascending: true }),
+    (q: any) => q.order('order_index', { ascending: true }), // 存在しない環境ではエラーになり得る
     (q: any) => q, // 最後は順序指定なし
   ]
 
-  for (let b = 0; b < bases.length; b++) {
-    for (let i = 0; i < orderTries.length; i++) {
+  for (let b = 0; b < idVariants.length; b++) {
+    for (let i = 0; i < orderers.length; i++) {
       try {
-        let query = orderTries[i](bases[b])
-        if (limit && typeof query.limit === 'function') {
-          query = query.limit(limit)
-        }
+        // 毎回新しいベースクエリを作ることで、無効な order を引きずらない
+        let query = adminClient
+          .from('questions')
+          .select('*')
+          .in('question_set_id', idVariants[b])
+        query = orderers[i](query)
+        if (limit && typeof query.limit === 'function') query = query.limit(limit)
         const { data, error } = await query
         if (!error && Array.isArray(data) && data.length > 0) return data
-        if (error) console.warn(`Questions fetch base ${b + 1} attempt ${i + 1} failed:`, error)
+        if (error) console.warn(`Questions fetch variant ${b + 1} order ${i + 1} failed:`, error.message || error)
       } catch (e) {
-        console.warn(`Questions fetch base ${b + 1} attempt ${i + 1} threw error:`, e)
+        console.warn(`Questions fetch variant ${b + 1} order ${i + 1} threw:`, e)
       }
     }
   }
