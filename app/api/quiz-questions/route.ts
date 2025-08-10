@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase'
+import { createServerClient, getSupabaseClient } from '@/lib/supabase'
 
 async function fetchQuestionsBySetIds(adminClient: any, setIds: any[], limit?: number) {
   // order_index → question_number → id → 無指定 の順でフォールバック
@@ -29,10 +29,18 @@ async function fetchQuestionsBySetIds(adminClient: any, setIds: any[], limit?: n
 
 export async function POST(request: NextRequest) {
   try {
-    const adminClient = createServerClient()
+    // サービスロールが無い環境でも応答できるようにフォールバック
+    let adminClient: any
+    try {
+      adminClient = createServerClient()
+    } catch (e) {
+      console.warn('quiz-questions POST: service role not configured, falling back to anon client')
+      adminClient = getSupabaseClient()
+    }
+
     const body = await request.json()
     
-    const { selectedCategories, selectedSets, questionCount = 1000 } = body
+    const { selectedCategories, selectedSets, questionCount = 500 } = body
 
     console.log('Quiz questions API: データ取得開始', {
       selectedCategories,
@@ -82,7 +90,15 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const adminClient = createServerClient()
+    // サービスロールが無い環境でも応答できるようにフォールバック
+    let adminClient: any
+    try {
+      adminClient = createServerClient()
+    } catch (e) {
+      console.warn('quiz-questions GET: service role not configured, falling back to anon client')
+      adminClient = getSupabaseClient()
+    }
+
     const { searchParams } = new URL(request.url)
     
     const categoryId = searchParams.get('categoryId')
