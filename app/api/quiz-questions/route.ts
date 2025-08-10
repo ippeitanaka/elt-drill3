@@ -33,14 +33,13 @@ async function fetchQuestionsBySetIds(adminClient: any, setIds: any[], limit?: n
     (q: any) => q.order('question_number', { ascending: true }),
     (q: any) => q.order('id', { ascending: true }),
     (q: any) => q.order('created_at', { ascending: true }),
-    (q: any) => q.order('order_index', { ascending: true }), // 存在しない環境ではエラーになり得る
-    (q: any) => q, // 最後は順序指定なし
+    (q: any) => q.order('order_index', { ascending: true }), // 環境により存在しない
+    (q: any) => q,
   ]
 
   for (let b = 0; b < idVariants.length; b++) {
     for (let i = 0; i < orderers.length; i++) {
       try {
-        // 毎回新しいベースクエリを作ることで、無効な order を引きずらない
         let query = adminClient
           .from('questions')
           .select('*')
@@ -55,6 +54,29 @@ async function fetchQuestionsBySetIds(adminClient: any, setIds: any[], limit?: n
       }
     }
   }
+
+  // フォールバック: 各IDを個別に eq で取得して集約
+  try {
+    const ids = numericIds.length > 0 ? numericIds : (stringIds.length > 0 ? stringIds : setIds)
+    const collected: any[] = []
+    for (const id of ids) {
+      try {
+        let q = adminClient.from('questions').select('*').eq('question_set_id', id).order('question_number', { ascending: true })
+        if (limit && typeof q.limit === 'function') q = q.limit(limit)
+        const { data, error } = await q
+        if (!error && Array.isArray(data) && data.length > 0) {
+          collected.push(...data)
+          if (limit && collected.length >= limit) break
+        }
+      } catch (e) {
+        console.warn('eq fallback error for id', id, e)
+      }
+    }
+    if (collected.length > 0) return collected.slice(0, limit || collected.length)
+  } catch (e) {
+    console.warn('eq fallback threw:', e)
+  }
+
   return []
 }
 
