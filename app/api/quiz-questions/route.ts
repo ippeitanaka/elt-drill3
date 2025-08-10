@@ -14,13 +14,22 @@ function toNumericIds(ids: any[] | undefined): number[] {
   return nums
 }
 
+function toStringIds(ids: any[] | undefined): string[] {
+  if (!Array.isArray(ids)) return []
+  return ids.map((v) => (v === null || v === undefined ? '' : String(v).trim()))
+}
+
 async function fetchQuestionsBySetIds(adminClient: any, setIds: any[], limit?: number) {
   // order_index → question_number → id → 無指定 の順でフォールバック
   const numericIds = toNumericIds(setIds)
+  const stringIds = toStringIds(setIds)
   const bases = [
     adminClient.from('questions').select('*').in('question_set_id', setIds),
     ...(numericIds.length > 0
       ? [adminClient.from('questions').select('*').in('question_set_id', numericIds)]
+      : []),
+    ...(stringIds.length > 0
+      ? [adminClient.from('questions').select('*').in('question_set_id', stringIds)]
       : []),
   ]
   const orderTries = [
@@ -45,7 +54,6 @@ async function fetchQuestionsBySetIds(adminClient: any, setIds: any[], limit?: n
       }
     }
   }
-  // どれも取れない場合は最後の試行でのデータ（空配列）を返す
   return []
 }
 
@@ -74,11 +82,16 @@ export async function POST(request: NextRequest) {
 
     if (selectedSets && selectedSets.length > 0) {
       questions = await fetchQuestionsBySetIds(adminClient, selectedSets, questionCount)
-      // 0件なら数値IDでも再試行（念のため）
       if (questions.length === 0) {
         const numericSetIds = toNumericIds(selectedSets)
         if (numericSetIds.length > 0) {
           questions = await fetchQuestionsBySetIds(adminClient, numericSetIds as any, questionCount)
+        }
+      }
+      if (questions.length === 0) {
+        const stringSetIds = toStringIds(selectedSets)
+        if (stringSetIds.length > 0) {
+          questions = await fetchQuestionsBySetIds(adminClient, stringSetIds as any, questionCount)
         }
       }
     } else if (selectedCategories && selectedCategories.length > 0) {
@@ -86,7 +99,9 @@ export async function POST(request: NextRequest) {
       let questionSetsIds: any[] = []
       const tryIdsList: any[][] = [selectedCategories]
       const numericCatIds = toNumericIds(selectedCategories)
+      const stringCatIds = toStringIds(selectedCategories)
       if (numericCatIds.length > 0) tryIdsList.push(numericCatIds as any)
+      if (stringCatIds.length > 0) tryIdsList.push(stringCatIds as any)
 
       for (let t = 0; t < tryIdsList.length; t++) {
         const ids = tryIdsList[t]
@@ -112,6 +127,12 @@ export async function POST(request: NextRequest) {
           const numericSetIds = toNumericIds(questionSetsIds)
           if (numericSetIds.length > 0) {
             questions = await fetchQuestionsBySetIds(adminClient, numericSetIds as any, questionCount)
+          }
+        }
+        if (questions.length === 0) {
+          const stringSetIds = toStringIds(questionSetsIds)
+          if (stringSetIds.length > 0) {
+            questions = await fetchQuestionsBySetIds(adminClient, stringSetIds as any, questionCount)
           }
         }
       }
@@ -162,6 +183,7 @@ export async function GET(request: NextRequest) {
 
     const tryIds: any[] = [categoryIdRaw]
     if (/^\d+$/.test(categoryIdRaw)) tryIds.push(Number(categoryIdRaw))
+    tryIds.push(String(categoryIdRaw))
 
     let questionSetIds: any[] = []
     for (let i = 0; i < tryIds.length; i++) {
