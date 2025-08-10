@@ -80,6 +80,65 @@ async function fetchQuestionsBySetIds(adminClient: any, setIds: any[], limit?: n
   return []
 }
 
+// 追加: カテゴリーIDで直接検索するフォールバック
+async function fetchQuestionsByCategoryIds(adminClient: any, categoryIds: any[], limit?: number) {
+  const idVariants: any[][] = []
+  const numericIds = toNumericIds(categoryIds)
+  const stringIds = toStringIds(categoryIds)
+  if (Array.isArray(categoryIds) && categoryIds.length > 0) idVariants.push(categoryIds)
+  if (numericIds.length > 0) idVariants.push(numericIds)
+  if (stringIds.length > 0) idVariants.push(stringIds)
+
+  const orderers: Array<(q: any) => any> = [
+    (q: any) => q.order('question_number', { ascending: true }),
+    (q: any) => q.order('id', { ascending: true }),
+    (q: any) => q.order('created_at', { ascending: true }),
+    (q: any) => q,
+  ]
+
+  for (let b = 0; b < idVariants.length; b++) {
+    for (let i = 0; i < orderers.length; i++) {
+      try {
+        let query = adminClient
+          .from('questions')
+          .select('*')
+          .in('category_id', idVariants[b])
+        query = orderers[i](query)
+        if (limit && typeof query.limit === 'function') query = query.limit(limit)
+        const { data, error } = await query
+        if (!error && Array.isArray(data) && data.length > 0) return data
+        if (error) console.warn(`Questions by category variant ${b + 1} order ${i + 1} failed:`, error.message || error)
+      } catch (e) {
+        console.warn(`Questions by category variant ${b + 1} order ${i + 1} threw:`, e)
+      }
+    }
+  }
+
+  // 単一カテゴリごとの eq フォールバック
+  try {
+    const ids = numericIds.length > 0 ? numericIds : (stringIds.length > 0 ? stringIds : categoryIds)
+    const collected: any[] = []
+    for (const id of ids) {
+      try {
+        let q = adminClient.from('questions').select('*').eq('category_id', id).order('question_number', { ascending: true })
+        if (limit && typeof q.limit === 'function') q = q.limit(limit)
+        const { data, error } = await q
+        if (!error && Array.isArray(data) && data.length > 0) {
+          collected.push(...data)
+          if (limit && collected.length >= limit) break
+        }
+      } catch (e) {
+        console.warn('category eq fallback error for id', id, e)
+      }
+    }
+    if (collected.length > 0) return collected.slice(0, limit || collected.length)
+  } catch (e) {
+    console.warn('category eq fallback threw:', e)
+  }
+
+  return []
+}
+
 export async function POST(request: NextRequest) {
   try {
     // サービスロールが無い環境でも応答できるようにフォールバック
@@ -116,6 +175,10 @@ export async function POST(request: NextRequest) {
         if (stringSetIds.length > 0) {
           questions = await fetchQuestionsBySetIds(adminClient, stringSetIds as any, questionCount)
         }
+      }
+      // セットで見つからない場合は、選択カテゴリーから直接取得
+      if (questions.length === 0 && selectedCategories && selectedCategories.length > 0) {
+        questions = await fetchQuestionsByCategoryIds(adminClient, selectedCategories, questionCount)
       }
     } else if (selectedCategories && selectedCategories.length > 0) {
       // カテゴリー→セットID 取得（型フォールバック）
@@ -158,6 +221,11 @@ export async function POST(request: NextRequest) {
             questions = await fetchQuestionsBySetIds(adminClient, stringSetIds as any, questionCount)
           }
         }
+      }
+
+      // セット経由で取得できなかった場合のフォールバック
+      if (questions.length === 0) {
+        questions = await fetchQuestionsByCategoryIds(adminClient, selectedCategories, questionCount)
       }
     }
 
@@ -226,13 +294,18 @@ export async function GET(request: NextRequest) {
     }
 
     if (questionSetIds.length === 0) {
-      return NextResponse.json({
-        success: true,
-        data: []
-      })
+      // セットが見つからない場合、カテゴリIDで直接取得
+      const questions = await fetchQuestionsByCategoryIds(adminClient, [categoryIdRaw], limit)
+      return NextResponse.json({ success: true, data: questions })
     }
 
     const questions = await fetchQuestionsBySetIds(adminClient, questionSetIds, limit)
+
+    // セット経由で空ならカテゴリ直取得
+    if (!questions || questions.length === 0) {
+      const fallback = await fetchQuestionsByCategoryIds(adminClient, [categoryIdRaw], limit)
+      return NextResponse.json({ success: true, data: fallback })
+    }
 
     console.log('取得した問題数:', questions?.length || 0)
 
