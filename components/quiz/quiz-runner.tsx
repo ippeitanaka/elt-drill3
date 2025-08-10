@@ -115,15 +115,43 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
         (s ?? '')
           .toString()
           .replace(/[\u200B-\u200D\uFEFF]/g, '') // ゼロ幅類
+          .replace(/[\u00A0]/g, ' ') // NBSP
           .replace(/\u3000/g, ' ') // 全角スペース
           .replace(/\s+/g, ' ')
           .trim()
 
-      // データを整形（トリムして空白のみを除外。正解インデックスも再計算）
+      // データを整形（5択を必ず維持。正解インデックスも再計算）
       const processedQuestions = questionsData.map((q: any) => {
-        const trim = (v: any) => stripInvisible(v)
+        const norm = (v: any) => stripInvisible(v)
 
-        // a-e のキー付き配列に正規化してから空を除外
+        // APIが既にchoices/correct_answer_indexを返している場合はそれを利用
+        if (Array.isArray(q.choices) && q.choices.length > 0) {
+          let baseChoices = q.choices.map((c: any) => {
+            const t = norm(c)
+            return t && t.length > 0 ? t : '—'
+          })
+          // 5択にパディング
+          while (baseChoices.length < 5) baseChoices.push('—')
+          const validIndex = Number.isInteger(q.correct_answer_index) ? Math.min(Math.max(q.correct_answer_index, 0), 4) : 0
+
+          const difficulty_level = (() => {
+            const d = (q.difficulty || '').toString().toLowerCase()
+            if (d === 'easy') return 1
+            if (d === 'hard') return 5
+            return 3
+          })()
+          const points = Number.isFinite(q.points) ? q.points : 1
+
+          return {
+            ...q,
+            difficulty_level,
+            points,
+            choices: baseChoices.slice(0, 5),
+            correct_answer_index: validIndex,
+          }
+        }
+
+        // a-e のキー付き配列（フィルタせず5件揃える）
         let keyed: Array<{ key: 'a'|'b'|'c'|'d'|'e'; text: string }> = []
         let correctLetter: 'a'|'b'|'c'|'d'|'e' = 'a'
 
@@ -133,11 +161,11 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
             const correctAnswers = typeof q.correct_answers === 'string' ? JSON.parse(q.correct_answers) : q.correct_answers
             correctLetter = normalizeLetter(Array.isArray(correctAnswers) ? correctAnswers[0] : correctAnswers)
             keyed = [
-              { key: 'a', text: trim(options?.a) },
-              { key: 'b', text: trim(options?.b) },
-              { key: 'c', text: trim(options?.c) },
-              { key: 'd', text: trim(options?.d) },
-              { key: 'e', text: trim(options?.e) },
+              { key: 'a', text: norm(options?.a) },
+              { key: 'b', text: norm(options?.b) },
+              { key: 'c', text: norm(options?.c) },
+              { key: 'd', text: norm(options?.d) },
+              { key: 'e', text: norm(options?.e) },
             ]
           } catch (error) {
             console.warn('JSON解析エラー:', error)
@@ -147,23 +175,19 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
         if (keyed.length === 0) {
           // 古い形式
           keyed = [
-            { key: 'a', text: trim(q.option_a) },
-            { key: 'b', text: trim(q.option_b) },
-            { key: 'c', text: trim(q.option_c) },
-            { key: 'd', text: trim(q.option_d) },
-            { key: 'e', text: trim(q.option_e) },
+            { key: 'a', text: norm(q.option_a) },
+            { key: 'b', text: norm(q.option_b) },
+            { key: 'c', text: norm(q.option_c) },
+            { key: 'd', text: norm(q.option_d) },
+            { key: 'e', text: norm(q.option_e) },
           ]
           correctLetter = normalizeLetter(q.correct_answer)
         }
 
-        // 見た目が空になる文字を除去した後で判定
-        const filtered = keyed.filter(k => stripInvisible(k.text).length > 0)
-        const choices = filtered.map(k => k.text)
-        const correctIndex = Math.max(0, filtered.findIndex(k => k.key === correctLetter))
-
-        // フォールバック（全て空）
-        const finalChoices = choices.length > 0 ? choices : ['（選択肢がありません）']
-        const finalCorrectIndex = choices.length > 0 ? (correctIndex >= 0 ? correctIndex : 0) : 0
+        // 5件をそのまま使う（空は見える最小プレースホルダに）
+        const choices = keyed.map(k => (k.text && k.text.length > 0) ? k.text : '—')
+        const letterToIndex: Record<string, number> = { a:0, b:1, c:2, d:3, e:4 }
+        const correctIndex = letterToIndex[correctLetter] ?? 0
 
         // 難易度/ポイントのデフォルト
         const difficulty_level = (() => {
@@ -178,8 +202,8 @@ export function QuizRunner({ selectedCategories, selectedSets, onComplete, onBac
           ...q,
           difficulty_level,
           points,
-          choices: finalChoices,
-          correct_answer_index: finalCorrectIndex,
+          choices,
+          correct_answer_index: correctIndex,
         }
       })
       
